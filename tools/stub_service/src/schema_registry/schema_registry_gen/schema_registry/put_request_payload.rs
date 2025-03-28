@@ -9,12 +9,12 @@ use iso8601_duration::Duration;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::put_request_schema::PutRequestSchema;
 use super::super::common_types::{b64::Bytes, date_only::Date, decimal::Decimal, time_only::Time};
-use super::get_request_schema::GetRequestSchema;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Builder)]
-pub struct GetRequestPayload {
+pub struct PutRequestPayload {
     /// The Command request argument.
-    #[serde(rename = "getSchemaRequest")]
-    pub get_schema_request: GetRequestSchema,
+    #[serde(rename = "putSchemaRequest")]
+    pub put_schema_request: PutRequestSchema,
 }

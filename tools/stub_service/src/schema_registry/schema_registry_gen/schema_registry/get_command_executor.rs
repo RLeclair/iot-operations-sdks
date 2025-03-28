@@ -3,28 +3,30 @@
 use std::collections::HashMap;
 
 use azure_iot_operations_mqtt::interface::ManagedClient;
-use azure_iot_operations_protocol::application::ApplicationContext;
 use azure_iot_operations_protocol::common::aio_protocol_error::AIOProtocolError;
 use azure_iot_operations_protocol::common::payload_serialize::PayloadSerialize;
 use azure_iot_operations_protocol::rpc_command;
+use azure_iot_operations_protocol::application::ApplicationContext;
+use iso8601_duration;
 
-use super::super::common_types::common_options::CommandOptions;
+use super::get_request_payload::GetRequestPayload;
+use super::get_response_payload::GetResponsePayload;
 use super::MODEL_ID;
 use super::REQUEST_TOPIC_PATTERN;
-use super::put_request_payload::PutRequestPayload;
-use super::put_response_payload::PutResponsePayload;
+use super::super::common_types::common_options::CommandOptions;
 
-pub type PutRequest = rpc_command::executor::Request<PutRequestPayload, PutResponsePayload>;
-pub type PutResponse = rpc_command::executor::Response<PutResponsePayload>;
-pub type PutResponseBuilderError = rpc_command::executor::ResponseBuilderError;
+pub type GetRequest =
+    rpc_command::executor::Request<GetRequestPayload, GetResponsePayload>;
+pub type GetResponse = rpc_command::executor::Response<GetResponsePayload>;
+pub type GetResponseBuilderError = rpc_command::executor::ResponseBuilderError;
 
-/// Builder for [`PutResponse`]
+/// Builder for [`GetResponse`]
 #[derive(Default)]
-pub struct PutResponseBuilder {
-    inner_builder: rpc_command::executor::ResponseBuilder<PutResponsePayload>,
+pub struct GetResponseBuilder {
+    inner_builder: rpc_command::executor::ResponseBuilder<GetResponsePayload>,
 }
 
-impl PutResponseBuilder {
+impl GetResponseBuilder {
     /// Custom user data to set on the response
     pub fn custom_user_data(&mut self, custom_user_data: Vec<(String, String)>) -> &mut Self {
         self.inner_builder.custom_user_data(custom_user_data);
@@ -35,41 +37,42 @@ impl PutResponseBuilder {
     ///
     /// # Errors
     /// If the payload cannot be serialized
-    pub fn payload(&mut self, payload: PutResponsePayload) -> Result<&mut Self, AIOProtocolError> {
+    pub fn payload(
+        &mut self,
+        payload: GetResponsePayload,
+    ) -> Result<&mut Self, AIOProtocolError> {
         self.inner_builder.payload(payload)?;
         Ok(self)
     }
 
-    /// Builds a new `PutResponse`
+    /// Builds a new `GetResponse`
     ///
     /// # Errors
     /// If a required field has not been initialized
-    #[allow(clippy::missing_panics_doc)] // The panic is not possible
-    pub fn build(&mut self) -> Result<PutResponse, PutResponseBuilderError> {
+    #[allow(clippy::missing_panics_doc)]    // The panic is not possible
+    pub fn build(&mut self) -> Result<GetResponse, GetResponseBuilderError> {
         self.inner_builder.build()
     }
 }
 
-/// Command Executor for `put`
-pub struct PutCommandExecutor<C>(rpc_command::Executor<PutRequestPayload, PutResponsePayload, C>)
+/// Command Executor for `get`
+pub struct GetCommandExecutor<C>(
+    rpc_command::Executor<GetRequestPayload, GetResponsePayload, C>,
+)
 where
     C: ManagedClient + Clone + Send + Sync + 'static,
     C::PubReceiver: Send + Sync + 'static;
 
-impl<C> PutCommandExecutor<C>
+impl<C> GetCommandExecutor<C>
 where
     C: ManagedClient + Clone + Send + Sync + 'static,
     C::PubReceiver: Send + Sync + 'static,
 {
-    /// Creates a new [`PutCommandExecutor`]
+    /// Creates a new [`GetCommandExecutor`]
     ///
     /// # Panics
     /// If the DTDL that generated this code was invalid
-    pub fn new(
-        application_context: ApplicationContext,
-        client: C,
-        options: &CommandOptions,
-    ) -> Self {
+    pub fn new(application_context: ApplicationContext, client: C, options: &CommandOptions) -> Self {
         let mut executor_options_builder = rpc_command::executor::OptionsBuilder::default();
         if let Some(topic_namespace) = &options.topic_namespace {
             executor_options_builder.topic_namespace(topic_namespace.clone());
@@ -84,12 +87,19 @@ where
 
         topic_token_map.insert("modelId".to_string(), MODEL_ID.to_string());
         topic_token_map.insert("executorId".to_string(), client.client_id().to_string());
-        topic_token_map.insert("commandName".to_string(), "put".to_string());
+        topic_token_map.insert("commandName".to_string(), "get".to_string());
 
         let executor_options = executor_options_builder
             .request_topic_pattern(REQUEST_TOPIC_PATTERN)
-            .command_name("put")
-            .is_idempotent(false)
+            .command_name("get")
+            .cacheable_duration(
+                "P1D"
+                    .parse::<iso8601_duration::Duration>()
+                    .unwrap()
+                    .to_std()
+                    .expect("TTL defined in DTDL schema exceeded maximum value"),
+            )
+            .is_idempotent(true)
             .topic_token_map(topic_token_map)
             .build()
             .expect("DTDL schema generated invalid arguments");
@@ -100,15 +110,15 @@ where
         )
     }
 
-    /// Receive the next [`PutRequest`] or [`None`] if there will be no more requests
+    /// Receive the next [`GetRequest`] or [`None`] if there will be no more requests
     ///
     /// # Errors
     /// [`AIOProtocolError`] if there is a failure receiving a request
-    pub async fn recv(&mut self) -> Option<Result<PutRequest, AIOProtocolError>> {
+    pub async fn recv(&mut self) -> Option<Result<GetRequest, AIOProtocolError>> {
         self.0.recv().await
     }
 
-    /// Shutdown the [`PutCommandExecutor`]. Unsubscribes from the request topic.
+    /// Shutdown the [`GetCommandExecutor`]. Unsubscribes from the request topic.
     ///
     /// Returns Ok(()) on success, otherwise returns [`AIOProtocolError`].
     /// # Errors
