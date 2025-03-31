@@ -1,3 +1,6 @@
+use stub_service::schema_registry::{self};
+
 fn main() {
-    println!("Hello, world!");
+
+    // let schema_registry_service_stub = schema_registry::Service::new()
 }

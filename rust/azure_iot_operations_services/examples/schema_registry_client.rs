@@ -21,7 +21,7 @@ const JSON_SCHEMA: &str = r#"
   "type": "object",
   "properties": {
     "humidity": {
-      "type": "integer"
+      "type": "number"
     },
     "temperature": {
       "type": "number"
@@ -99,6 +99,7 @@ async fn schema_registry_put(
                 .content(JSON_SCHEMA.to_string())
                 .format(Format::JsonSchemaDraft07)
                 .schema_type(SchemaType::MessageSchema)
+                .version("2".to_string())
                 .build()
                 .unwrap(),
             Duration::from_secs(10),
@@ -125,7 +126,11 @@ async fn schema_registry_get(
         Ok(schema_id) => {
             match client
                 .get(
-                    GetRequestBuilder::default().id(schema_id).build().unwrap(),
+                    GetRequestBuilder::default()
+                        .id(schema_id)
+                        .version("2".to_string())
+                        .build()
+                        .unwrap(),
                     Duration::from_secs(10),
                 )
                 .await
