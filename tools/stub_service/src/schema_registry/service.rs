@@ -12,12 +12,15 @@ use std::{
 use azure_iot_operations_mqtt::{interface::ManagedClient, session::Session};
 use azure_iot_operations_protocol::{application::ApplicationContext, rpc_command};
 
-use crate::{create_service_session, schema_registry::schema_registry_gen::schema_registry::service::{
-    GetCommandExecutor, PutCommandExecutor
-}};
+use crate::{
+    create_service_session,
+    schema_registry::schema_registry_gen::schema_registry::service::{
+        GetCommandExecutor, PutCommandExecutor,
+    },
+};
 
 use super::{
-    Schema, SchemaKey,
+    CLIENT_ID, Schema, SchemaKey,
     schema_registry_gen::{
         common_types::common_options::CommandOptionsBuilder,
         schema_registry::service::{GetResponsePayload, PutRequestSchema, PutResponsePayload},
@@ -30,7 +33,6 @@ where
     C: ManagedClient + Clone + Send + Sync + 'static,
     C::PubReceiver: Send + Sync + 'static,
 {
-    session: Session,
     get_command_executor: GetCommandExecutor<C>,
     put_command_executor: PutCommandExecutor<C>,
 }
@@ -43,7 +45,6 @@ where
     /// Creates a new stub Schema Registry Service.
     pub fn new(application_context: ApplicationContext, client: C) -> Self {
         Self {
-            session: create_service_session()
             get_command_executor: GetCommandExecutor::new(
                 application_context.clone(),
                 client.clone(),
@@ -57,7 +58,7 @@ where
         }
     }
 
-    pub async fn run(self) {
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Create a HashMap to store schemas
         let schemas = Arc::new(Mutex::new(HashMap::new()));
 
@@ -69,6 +70,8 @@ where
             tokio::spawn(Self::put_schema_runner(self.put_command_executor, schemas));
 
         let _ = tokio::try_join!(get_schema_runner_handle, put_schema_runner_handle,);
+
+        Ok(())
     }
 
     async fn get_schema_runner(
@@ -97,7 +100,7 @@ where
                             .unwrap();
                         get_request.complete(response).await.unwrap();
                     }
-                    Err(err) => {
+                    Err(_) => {
                         // Handle error
                         todo!();
                     }

@@ -11,8 +11,8 @@ pub use crate::schema_registry::service::Service;
 pub use schema_registry_gen::schema_registry::service::Schema;
 use schema_registry_gen::schema_registry::service::{GetRequestSchema, PutRequestSchema};
 
-const SCHEMA_REGISTRY_CLIENT_ID: &str = "schema_registry_service_stub";
-const SCHEMA_REGISTRY_NAMESPACE: &str = "aio-sr-ns-stub";
+pub const CLIENT_ID: &str = "schema_registry_service_stub";
+const NAMESPACE: &str = "aio-sr-ns-stub";
 
 #[derive(Hash, Eq, PartialEq, Clone)]
 struct SchemaKey {
@@ -56,7 +56,7 @@ impl From<PutRequestSchema> for Schema {
             format: put_request_schema.format,
             hash: Some(schema_hash.clone()),
             name: Some(schema_hash),
-            namespace: Some(SCHEMA_REGISTRY_NAMESPACE.to_string()),
+            namespace: Some(NAMESPACE.to_string()),
             schema_content: put_request_schema.schema_content,
             schema_type: put_request_schema.schema_type,
             tags: put_request_schema.tags,

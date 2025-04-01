@@ -10,7 +10,7 @@ pub mod schema_registry;
 const HOSTNAME: &str = "localhost";
 const PORT: u16 = 1883;
 
-fn create_service_session(client_id: String) -> Result<Session, Box<dyn std::error::Error>> {
+pub fn create_service_session(client_id: String) -> Result<Session, Box<dyn std::error::Error>> {
     // Create a Session
     let connection_settings = MqttConnectionSettingsBuilder::default()
         .client_id(client_id)

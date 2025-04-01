@@ -18,3 +18,5 @@ bigdecimal = "0.4.5"
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 uuid = { version = "1.8.0", features = ["serde", "v4"] }
 derive_builder = "0.20"
+log = "0.4.21"          
+env_logger = "0.11.3"
