@@ -20,3 +20,4 @@ uuid = { version = "1.8.0", features = ["serde", "v4"] }
 derive_builder = "0.20"
 log = "0.4.21"          
 env_logger = "0.11.3"
+thiserror = "2.0.12"

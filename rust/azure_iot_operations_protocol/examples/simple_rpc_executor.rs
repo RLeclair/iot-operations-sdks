@@ -21,9 +21,9 @@ const REQUEST_TOPIC_PATTERN: &str = "topic/for/request";
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Builder::new()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::max())
         .format_timestamp(None)
-        .filter_module("rumqttc", log::LevelFilter::Warn)
+        .filter_module("rumqttc", log::LevelFilter::max())
         .init();
 
     // Create a Session

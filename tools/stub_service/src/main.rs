@@ -1,4 +1,4 @@
-use azure_iot_operations_protocol::application::{ApplicationContext, ApplicationContextBuilder};
+use azure_iot_operations_protocol::application::ApplicationContextBuilder;
 use env_logger::Builder;
 use stub_service::{
     create_service_session,
@@ -8,13 +8,16 @@ use stub_service::{
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Builder::new()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .format_timestamp(None)
         .filter_module("rumqttc", log::LevelFilter::Warn)
+        .filter_module("azure_iot_operations_protocol", log::LevelFilter::Warn)
+        .filter_module("azure_iot_operations_mqtt", log::LevelFilter::Warn)
         .init();
 
     let application_context = ApplicationContextBuilder::default().build().unwrap();
 
+    // Create a service session
     let sr_service_session =
         create_service_session(schema_registry::CLIENT_ID.to_string()).unwrap();
     let sr_service_stub = schema_registry::Service::new(
