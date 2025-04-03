@@ -51,7 +51,7 @@ folder stub_service_1743702989
 
 ## Open Questions
 
-- **Kubernetes Requirement**: Will the local environment need Kubernetes to run MQ? *(Answer: Yes.)*
-- **Deployment Location**: Should the stub service run as a Kubernetes pod or externally?
-- **State Format**: What format should schema states use? *(Proposed: JSON.)*
-- **Environment Variable**: How will the `STUB_SERVICE_OUTPUT_DIR` variable be obtained?
+- Will the local environment need Kubernetes to run MQ? *(Answer: Yes.)*
+- Should the stub service run as a Kubernetes pod or externally?
+- What format should schema states use? *(Proposed: JSON.)*
+- How will the `STUB_SERVICE_OUTPUT_DIR` variable be obtained?
