@@ -10,7 +10,7 @@ The Stub Service provides a local implementation of services that typically requ
 - **State and Logs**: Writes state and logs to a folder specified by the environment variable `STUB_SERVICE_OUTPUT_DIR`. 
   - The folder structure follows this format: `stub_service_[timestamp]`.
   - Each service creates its own subfolder within the main folder to store its state.
-  - See [Example Output Folder](#example-output-folder).
+  - See [Example Output Folder](#output-folder-structure).
 - **Unified Execution**: All stub services run from the same crate. A critical failure in any service causes a crash, with the error returned from `main`.
 - **Logging**: Adheres to [ADR 0005](../../doc/dev/adr/0005-logging.md).
 
