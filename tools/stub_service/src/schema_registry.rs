@@ -10,20 +10,12 @@ pub use crate::schema_registry::service::Service;
 pub use schema_registry_gen::schema_registry::service::Schema;
 use schema_registry_gen::schema_registry::service::{GetRequestSchema, PutRequestSchema};
 
-use thiserror::Error;
-
 pub const CLIENT_ID: &str = "schema_registry_service_stub";
 const NAMESPACE: &str = "aio-sr-ns-stub";
+const SCHEMA_STATE_FILE: &str = "schema_state.json";
 
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub struct Error(#[from] ErrorKind);
-
-#[derive(Debug, Error)]
-pub enum ErrorKind {}
-
-#[derive(Hash, Eq, PartialEq, Clone)]
-struct SchemaKey {
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub struct SchemaKey {
     content_hash: String,
     version: String,
 }

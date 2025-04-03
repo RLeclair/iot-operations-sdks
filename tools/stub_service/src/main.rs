@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::Write;
+
 use azure_iot_operations_protocol::application::ApplicationContextBuilder;
 use env_logger::Builder;
 use stub_service::{
@@ -15,6 +18,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_module("azure_iot_operations_mqtt", log::LevelFilter::Warn)
         .init();
 
+    // Get output directory from environment variable
+    let output_dir =
+        std::env::var("STUB_SERVICE_OUTPUT_DIR").expect("STUB_SERVICE_OUTPUT_DIR must be set");
+
     let application_context = ApplicationContextBuilder::default().build().unwrap();
 
     // Create a service session
@@ -23,6 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sr_service_stub = schema_registry::Service::new(
         application_context,
         sr_service_session.create_managed_client(),
+        &output_dir,
     );
 
     // Run the services
