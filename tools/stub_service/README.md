@@ -1,10 +1,12 @@
 # Stub Service
 
-The Stub Service provides a local implementation of services that typically require a full deployment of AIO. It is designed for **development purposes ONLY** and is part of the VS Code extension created by the DevEx team.
+The Stub Service provides a local implementation of services that typically require a full deployment of AIO. It is designed for development purposes and will be part of the VS Code extension created by the DevEx team.
+
+The Stub Service will also be used for basic happy path testing on the SDKs.
 
 ## Features
 
-- **Service Simulation**: Simulates basic service behavior based on the DTDL contract.
+- **Service Simulation**: Simulates basic service behavior based on DTDL contracts.
   - See [Schema Registry Stub Service Behavior](#schema-registry).
 - **Session Isolation**: Each service operates in its own session with a unique MQTT client ID.
 - **State and Logs**: Writes state and logs to a folder specified by the environment variable `STUB_SERVICE_OUTPUT_DIR`. 
@@ -17,6 +19,8 @@ The Stub Service provides a local implementation of services that typically requ
 ## Stub Services
 
 ### Schema Registry
+
+*Note: Will replace the previous dotnet schema registry stub implementation which was built for testing.*
 
 #### State Management
 
@@ -63,3 +67,4 @@ folder [STUB_SERVICE_OUTPUT_DIR]
 - Should the stub service run as a Kubernetes pod or externally?
 - What format should schema states use? *(Proposed: JSON.)*
 - How will the `STUB_SERVICE_OUTPUT_DIR` variable be obtained?
+- Will the ADR service need a stub? Or will it be included in the mini-MQ deployment in the same way as state store?
