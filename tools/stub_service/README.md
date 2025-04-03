@@ -40,13 +40,21 @@ The Stub Service provides a local implementation of services that typically requ
 ### Output Folder Structure
 
 ```text
-folder stub_service_1743702989
-├── folder schema_registry
-│   ├── foo_schema.json
-│   ├── bar_schema.json
-└── folder diagnostics_service
-    ├── foo_counter.json
-    ├── bar_gauge.json
+folder [STUB_SERVICE_OUTPUT_DIR]
+  folder stub_service_1743702989
+  ├── folder schema_registry
+  │   ├── foo_schema.json
+  │   ├── bar_schema.json
+  └── folder diagnostics_service
+      ├── foo_counter.json
+      ├── bar_gauge.json
+  folder stub_service_1743700000
+  ├── folder schema_registry
+  │   ├── foo_schema.json
+  │   ├── bar_schema.json
+  └── folder diagnostics_service
+      ├── foo_counter.json
+      ├── bar_gauge.json
 ```
 
 ## Open Questions
