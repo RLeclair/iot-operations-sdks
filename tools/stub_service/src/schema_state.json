@@ -1,0 +1,12 @@
+[
+  {
+    "format": "JsonSchema/draft-07",
+    "hash": "3223983680689924058",
+    "name": "3223983680689924058",
+    "namespace": "aio-sr-ns-stub",
+    "schemaContent": "\n{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"type\": \"object\",\n  \"properties\": {\n    \"humidity\": {\n      \"type\": \"number\"\n    },\n    \"temperature\": {\n      \"type\": \"number\"\n    }\n  }\n}\n",
+    "schemaType": "MessageSchema",
+    "tags": {},
+    "version": "2"
+  }
+]

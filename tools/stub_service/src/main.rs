@@ -1,10 +1,12 @@
-use std::fs::File;
+use std::alloc::System;
 use std::io::Write;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{fs::File, time::Instant};
 
 use azure_iot_operations_protocol::application::ApplicationContextBuilder;
 use env_logger::Builder;
 use stub_service::{
-    create_service_session,
+    STUB_SERVICE_OUTPUT_DIR, create_service_session,
     schema_registry::{self},
 };
 
@@ -21,6 +23,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get output directory from environment variable
     let output_dir =
         std::env::var("STUB_SERVICE_OUTPUT_DIR").expect("STUB_SERVICE_OUTPUT_DIR must be set");
+
+    // Create output directory for the stub service
+    let output_stub_service_path = std::path::Path::new(&output_dir).join(format!(
+        "{}_{}",
+        STUB_SERVICE_OUTPUT_DIR,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    ));
+
+    std::fs::create_dir_all(&output_stub_service_path)?;
+    let output_dir = output_stub_service_path.to_str().unwrap();
 
     let application_context = ApplicationContextBuilder::default().build().unwrap();
 

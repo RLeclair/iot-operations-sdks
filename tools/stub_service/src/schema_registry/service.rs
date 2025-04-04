@@ -14,10 +14,7 @@ use std::{
 use azure_iot_operations_mqtt::interface::ManagedClient;
 use azure_iot_operations_protocol::{application::ApplicationContext, rpc_command};
 
-use crate::schema_registry::{
-    SCHEMA_STATE_FILE,
-    schema_registry_gen::schema_registry::service::{GetCommandExecutor, PutCommandExecutor},
-};
+use crate::schema_registry::{SCHEMA_STATE_FILE, service_gen};
 use crate::schema_registry::{
     Schema, SchemaKey,
     schema_registry_gen::{
@@ -33,8 +30,8 @@ where
     C::PubReceiver: Send + Sync + 'static,
 {
     schemas: Arc<Mutex<HashMap<SchemaKey, Schema>>>,
-    get_command_executor: GetCommandExecutor<C>,
-    put_command_executor: PutCommandExecutor<C>,
+    get_command_executor: service_gen::GetCommandExecutor<C>,
+    put_command_executor: service_gen::PutCommandExecutor<C>,
     stub_service_output_dir: String,
 }
 
@@ -53,14 +50,14 @@ where
 
         Self {
             schemas: Arc::new(Mutex::new(HashMap::new())),
-            get_command_executor: GetCommandExecutor::new(
+            get_command_executor: service_gen::GetCommandExecutor::new(
                 application_context.clone(),
                 client.clone(),
                 &CommandOptionsBuilder::default()
                     .build()
                     .expect("Default command options should be valid"),
             ),
-            put_command_executor: PutCommandExecutor::new(
+            put_command_executor: service_gen::PutCommandExecutor::new(
                 application_context,
                 client,
                 &CommandOptionsBuilder::default()
@@ -116,7 +113,7 @@ where
     }
 
     async fn get_schema_runner(
-        mut get_command_executor: GetCommandExecutor<C>,
+        mut get_command_executor: service_gen::GetCommandExecutor<C>,
         schemas: Arc<Mutex<HashMap<SchemaKey, Schema>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
@@ -150,7 +147,9 @@ where
 
                         // Send the response
                         let response = rpc_command::executor::ResponseBuilder::default()
-                            .payload(GetResponsePayload { schema })
+                            .payload(GetResponsePayload {
+                                schema: schema.map(|s| s.into()),
+                            })
                             .expect("Get response payload should be valid")
                             .build()
                             .expect("Get response should not fail to build");
@@ -182,7 +181,7 @@ where
     }
 
     async fn put_schema_runner(
-        mut put_command_executor: PutCommandExecutor<C>,
+        mut put_command_executor: service_gen::PutCommandExecutor<C>,
         schemas: Arc<Mutex<HashMap<SchemaKey, Schema>>>,
         mut output_file: File,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -202,14 +201,8 @@ where
 
                         // Create the schema key
                         let schema_key = SchemaKey {
-                            content_hash: schema
-                                .hash
-                                .clone()
-                                .expect("Schema hash should be present in the schema"),
-                            version: schema
-                                .version
-                                .clone()
-                                .expect("Schema version should be present in the schema"),
+                            content_hash: schema.hash.clone(),
+                            version: schema.version.clone(),
                         };
 
                         // Store the schema in the HashMap
@@ -253,7 +246,9 @@ where
 
                         // Send the response
                         let response = rpc_command::executor::ResponseBuilder::default()
-                            .payload(PutResponsePayload { schema })
+                            .payload(PutResponsePayload {
+                                schema: schema.into(),
+                            })
                             .expect("Put response payload should be valid")
                             .build()
                             .expect("Put response should not fail to build");
