@@ -4,22 +4,22 @@
 //! Stub Schema Registry service.
 
 use std::{
-    collections::HashMap,
-    fs::File,
-    io::Write,
-    path::Path,
+    collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex},
 };
 
 use azure_iot_operations_mqtt::interface::ManagedClient;
 use azure_iot_operations_protocol::{application::ApplicationContext, rpc_command};
 
-use crate::schema_registry::{SCHEMA_STATE_FILE, service_gen};
-use crate::schema_registry::{
-    Schema, SchemaKey,
-    schema_registry_gen::{
-        common_types::common_options::CommandOptionsBuilder,
-        schema_registry::service::{GetResponsePayload, PutResponsePayload},
+use crate::{OutputDirectoryManager, schema_registry::service_gen};
+use crate::{
+    ServiceOutputManager,
+    schema_registry::{
+        SERVICE_NAME, Schema,
+        schema_registry_gen::{
+            common_types::common_options::CommandOptionsBuilder,
+            schema_registry::service::{GetResponsePayload, PutResponsePayload},
+        },
     },
 };
 
@@ -29,10 +29,10 @@ where
     C: ManagedClient + Clone + Send + Sync + 'static,
     C::PubReceiver: Send + Sync + 'static,
 {
-    schemas: Arc<Mutex<HashMap<SchemaKey, Schema>>>,
+    schemas: Arc<Mutex<HashMap<String, BTreeSet<Schema>>>>,
     get_command_executor: service_gen::GetCommandExecutor<C>,
     put_command_executor: service_gen::PutCommandExecutor<C>,
-    stub_service_output_dir: String,
+    service_output_manager: ServiceOutputManager,
 }
 
 impl<C> Service<C>
@@ -44,7 +44,7 @@ where
     pub fn new(
         application_context: ApplicationContext,
         client: C,
-        stub_service_output_dir: &str,
+        output_directory_manager: &OutputDirectoryManager,
     ) -> Self {
         log::info!("Schema Registry Stub Service created");
 
@@ -64,26 +64,13 @@ where
                     .build()
                     .expect("Default command options should be valid"),
             ),
-            stub_service_output_dir: stub_service_output_dir.to_string(),
+            service_output_manager: output_directory_manager
+                .create_new_service_output_manager(SERVICE_NAME),
         }
     }
 
+    /// Runs the Schema Registry stub service.
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Create the output file path
-        let output_file_path = Path::new(&self.stub_service_output_dir).join(SCHEMA_STATE_FILE);
-
-        // Create the file if it doesn't exist
-        let output_file = if !output_file_path.exists() {
-            log::info!("Creating output file: {:?}", output_file_path);
-            std::fs::File::create(&output_file_path).expect("Failed to create output file")
-        } else {
-            log::warn!(
-                "Output file already exists, creating again: {:?}",
-                output_file_path
-            );
-            std::fs::File::create(&output_file_path).expect("Failed to open output file")
-        };
-
         let get_schema_runner_handle = tokio::spawn(Self::get_schema_runner(
             self.get_command_executor,
             self.schemas.clone(),
@@ -91,7 +78,7 @@ where
         let put_schema_runner_handle = tokio::spawn(Self::put_schema_runner(
             self.put_command_executor,
             self.schemas,
-            output_file,
+            self.service_output_manager,
         ));
 
         tokio::select! {
@@ -114,9 +101,10 @@ where
 
     async fn get_schema_runner(
         mut get_command_executor: service_gen::GetCommandExecutor<C>,
-        schemas: Arc<Mutex<HashMap<SchemaKey, Schema>>>,
+        schemas: Arc<Mutex<HashMap<String, BTreeSet<Schema>>>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
+            // Wait for a new get request
             match get_command_executor.recv().await {
                 Some(incoming_request) => match incoming_request {
                     Ok(get_request) => {
@@ -125,25 +113,61 @@ where
                             get_request.payload.get_schema_request
                         );
 
-                        // Create a schema key
-                        let schema_key =
-                            SchemaKey::from(get_request.payload.clone().get_schema_request);
+                        // Extract the schema name
+                        let schema_name = get_request
+                            .payload
+                            .get_schema_request
+                            .name
+                            .as_ref()
+                            .expect("Schema name is required")
+                            .clone();
+                        // Extract the schema version
+                        let schema_version: u32 = get_request
+                            .payload
+                            .get_schema_request
+                            .version
+                            .as_ref()
+                            .expect("Schema version is required")
+                            .parse()
+                            .unwrap(); // TODO: Implement error handling for incorrect version number
 
-                        // Retrieve the schema
+                        // Retrieve the schema from the request
                         let schema = {
                             let schemas = schemas.lock().expect("Mutex management should be safe");
-                            schemas.get(&schema_key).cloned()
-                        };
 
-                        if schema.is_some() {
-                            log::debug!("Schema found: {:?}", schema);
-                        } else {
-                            log::debug!(
-                                "Schema {:?} version {:?} not found",
-                                schema_key.content_hash,
-                                schema_key.version
-                            );
-                        }
+                            match schemas.get(&schema_name) {
+                                Some(schema_set) => {
+                                    // We need to iterate through to find the schema with the correct version, to use get we would have to create a new schema object with the version and hash matching the request
+                                    let find_res =
+                                        schema_set.iter().find(|s| s.version == schema_version);
+                                    match find_res {
+                                        Some(schema) => {
+                                            // We found the schema with the correct version
+                                            log::debug!(
+                                                "Schema {:?} version {:?} found",
+                                                schema_name,
+                                                schema_version
+                                            );
+                                            Some(schema.clone())
+                                        }
+                                        None => {
+                                            // We found the schema but not the version
+                                            log::debug!(
+                                                "Schema {:?} found but version {:?} not found",
+                                                schema_name,
+                                                schema_version
+                                            );
+                                            None
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // Schema not found
+                                    log::debug!("Schema {:?} not found", schema_name);
+                                    None
+                                }
+                            }
+                        };
 
                         // Send the response
                         let response = rpc_command::executor::ResponseBuilder::default()
@@ -158,8 +182,8 @@ where
                             Ok(_) => {
                                 log::debug!(
                                     "Get request completed successfully for Schema {}, version {}",
-                                    schema_key.content_hash,
-                                    schema_key.version
+                                    schema_name,
+                                    schema_version
                                 );
                             }
                             Err(e) => {
@@ -182,10 +206,11 @@ where
 
     async fn put_schema_runner(
         mut put_command_executor: service_gen::PutCommandExecutor<C>,
-        schemas: Arc<Mutex<HashMap<SchemaKey, Schema>>>,
-        mut output_file: File,
+        schemas: Arc<Mutex<HashMap<String, BTreeSet<Schema>>>>,
+        service_state_manager: ServiceOutputManager,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
+            // Wait for a new put request
             match put_command_executor.recv().await {
                 Some(incoming_request) => match incoming_request {
                     Ok(put_request) => {
@@ -194,54 +219,72 @@ where
                             put_request.payload.put_schema_request
                         );
 
-                        // Retrieve the schema
+                        // Extract the schema from the request
                         let schema: Schema = put_request.payload.put_schema_request.clone().into();
 
                         // TODO: Add verification of schema
 
-                        // Create the schema key
-                        let schema_key = SchemaKey {
-                            content_hash: schema.hash.clone(),
-                            version: schema.version.clone(),
-                        };
+                        // Extract the schema name
+                        let schema_name = &schema.name;
+                        // Extract the schema version
+                        let schema_version: u32 = schema.version;
 
                         // Store the schema in the HashMap
                         {
                             let mut schemas =
                                 schemas.lock().expect("Mutex management should be safe");
 
-                            match schemas.insert(schema_key.clone(), schema.clone()) {
-                                Some(old_schema) => {
-                                    log::debug!(
-                                        "Schema {} updated, current version: {}",
-                                        schema_key.content_hash,
-                                        schema_key.version,
-                                    );
-                                    log::debug!("Old schema removed: {:?}", old_schema);
-                                }
-                                None => {
-                                    log::debug!(
-                                        "Schema {} added, version: {}",
-                                        schema_key.content_hash,
-                                        schema_key.version
-                                    );
-                                }
-                            }
+                            schemas
+                                .entry(schema_name.clone())
+                                .and_modify(|schema_set| {
+                                    // Case in which the schema already exists
 
+                                    // Replace the schema with the new one or add it to the set if it doesn't exist
+                                    let old_schema = schema_set.replace(schema.clone());
+
+                                    match old_schema {
+                                        Some(old_schema) => {
+                                            // Version of the schema already existed and was replaced
+                                            log::debug!(
+                                                "Schema {} version {} updated",
+                                                schema_name,
+                                                schema_version,
+                                            );
+                                            log::debug!("Previous schema: {:?}", old_schema);
+                                        }
+                                        None => {
+                                            // This version of the schema didn't exist and was added
+                                            log::debug!(
+                                                "Schema {} version {} added",
+                                                schema_name,
+                                                schema_version
+                                            );
+                                        }
+                                    }
+                                })
+                                .or_insert(BTreeSet::from([{
+                                    // Case in which the schema doesn't exist
+                                    log::debug!(
+                                        "New Schema {} created, version {} added",
+                                        schema_name,
+                                        schema_version
+                                    );
+
+                                    // Create a new schema set with the new schema
+                                    schema.clone()
+                                }]));
+
+                            // Get the Schema set for the schema name
                             let schemas_list = schemas
-                                .iter()
-                                .map(|(_, schema)| schema.clone())
-                                .collect::<Vec<_>>();
+                                .get(schema_name)
+                                .expect("Schema key should be present in the HashMap");
 
-                            // Write the schemas to the output file
-                            output_file.set_len(0).expect("Failed to clear file");
-                            output_file
-                                .write_all(
-                                    serde_json::to_string_pretty(&schemas_list)
-                                        .expect("Failed to serialize schemas")
-                                        .as_bytes(),
-                                )
-                                .expect("Failed to write to file");
+                            // Output schemas
+                            service_state_manager.write_state(
+                                &schema_name,
+                                serde_json::to_string_pretty(schemas_list)
+                                    .expect("Schemas should be serializable"),
+                            );
                         }
 
                         // Send the response
@@ -254,13 +297,7 @@ where
                             .expect("Put response should not fail to build");
 
                         match put_request.complete(response).await {
-                            Ok(_) => {
-                                log::debug!(
-                                    "Put request completed successfully for Schema {}, version {}",
-                                    schema_key.content_hash,
-                                    schema_key.version
-                                );
-                            }
+                            Ok(_) => { /* Success */ }
                             Err(e) => {
                                 log::error!("Failed to complete Put request: {:?}", e);
                             }

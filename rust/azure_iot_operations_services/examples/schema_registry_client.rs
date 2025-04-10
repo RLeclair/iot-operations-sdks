@@ -21,7 +21,7 @@ const JSON_SCHEMA: &str = r#"
   "type": "object",
   "properties": {
     "humidity": {
-      "type": "number"
+      "type": "string"
     },
     "temperature": {
       "type": "number"
@@ -97,9 +97,9 @@ async fn schema_registry_put(
         .put(
             PutRequestBuilder::default()
                 .content(JSON_SCHEMA.to_string())
-                .format(Format::JsonSchemaDraft07)
+                .format(Format::Delta1)
                 .schema_type(SchemaType::MessageSchema)
-                .version("2".to_string())
+                .version("1".to_string())
                 .build()
                 .unwrap(),
             Duration::from_secs(10),

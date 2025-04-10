@@ -1,12 +1,7 @@
-use std::alloc::System;
-use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{fs::File, time::Instant};
-
 use azure_iot_operations_protocol::application::ApplicationContextBuilder;
 use env_logger::Builder;
 use stub_service::{
-    STUB_SERVICE_OUTPUT_DIR, create_service_session,
+    OutputDirectoryManager, create_service_session,
     schema_registry::{self},
 };
 
@@ -20,35 +15,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_module("azure_iot_operations_mqtt", log::LevelFilter::Warn)
         .init();
 
-    // Get output directory from environment variable
-    let output_dir =
-        std::env::var("STUB_SERVICE_OUTPUT_DIR").expect("STUB_SERVICE_OUTPUT_DIR must be set");
+    // Initialize the output directory manager
+    let output_directory_manager = OutputDirectoryManager::new();
 
-    // Create output directory for the stub service
-    let output_stub_service_path = std::path::Path::new(&output_dir).join(format!(
-        "{}_{}",
-        STUB_SERVICE_OUTPUT_DIR,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    ));
-
-    std::fs::create_dir_all(&output_stub_service_path)?;
-    let output_dir = output_stub_service_path.to_str().unwrap();
-
+    // Create the application context
     let application_context = ApplicationContextBuilder::default().build().unwrap();
 
-    // Create a service session
+    // Create the schema registry service session and stub
     let sr_service_session =
         create_service_session(schema_registry::CLIENT_ID.to_string()).unwrap();
     let sr_service_stub = schema_registry::Service::new(
         application_context,
         sr_service_session.create_managed_client(),
-        &output_dir,
+        &output_directory_manager,
     );
 
-    // Run the services
+    // Run the stub services and their sessions
     tokio::select! {
         r1 = sr_service_session.run() => r1?,
         r2 = sr_service_stub.run() => r2.map_err(|e| e as Box<dyn std::error::Error>)?,

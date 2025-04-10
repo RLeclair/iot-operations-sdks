@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Types for the Schema Registry stub service.
+
 mod schema_registry_gen;
 mod service;
 
@@ -13,28 +15,12 @@ pub use crate::schema_registry::service::Service;
 use schema_registry_gen::schema_registry::service as service_gen;
 use serde::{Deserialize, Serialize};
 
+const SERVICE_NAME: &str = "SchemaRegistry";
 pub const CLIENT_ID: &str = "schema_registry_service_stub";
 const NAMESPACE: &str = "aio-sr-ns-stub";
-const SCHEMA_STATE_FILE: &str = "schema_state.json";
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub struct SchemaKey {
-    content_hash: String,
-    version: String,
-}
-
-impl From<service_gen::GetRequestSchema> for SchemaKey {
-    fn from(get_request_schema: service_gen::GetRequestSchema) -> Self {
-        Self {
-            content_hash: get_request_schema.name.expect("Schema name is required"),
-            version: get_request_schema
-                .version
-                .expect("Schema version is required"),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Supported schema formats
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Format {
     #[serde(rename = "Delta/1.0")]
     Delta1,
@@ -42,18 +28,16 @@ pub enum Format {
     JsonSchemaDraft07,
 }
 
-impl From<schema_registry_gen::schema_registry::service::Format> for Format {
-    fn from(format: schema_registry_gen::schema_registry::service::Format) -> Self {
+impl From<service_gen::Format> for Format {
+    fn from(format: service_gen::Format) -> Self {
         match format {
-            schema_registry_gen::schema_registry::service::Format::Delta1 => Format::Delta1,
-            schema_registry_gen::schema_registry::service::Format::JsonSchemaDraft07 => {
-                Format::JsonSchemaDraft07
-            }
+            service_gen::Format::Delta1 => Format::Delta1,
+            service_gen::Format::JsonSchemaDraft07 => Format::JsonSchemaDraft07,
         }
     }
 }
 
-impl From<Format> for schema_registry_gen::schema_registry::service::Format {
+impl From<Format> for service_gen::Format {
     fn from(format: Format) -> Self {
         match format {
             Format::Delta1 => schema_registry_gen::schema_registry::service::Format::Delta1,
@@ -65,31 +49,27 @@ impl From<Format> for schema_registry_gen::schema_registry::service::Format {
 }
 
 /// Supported schema types
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SchemaType {
     MessageSchema,
 }
 
-impl From<schema_registry_gen::schema_registry::service::SchemaType> for SchemaType {
-    fn from(schema_type: schema_registry_gen::schema_registry::service::SchemaType) -> Self {
+impl From<service_gen::SchemaType> for SchemaType {
+    fn from(schema_type: service_gen::SchemaType) -> Self {
         match schema_type {
-            schema_registry_gen::schema_registry::service::SchemaType::MessageSchema => {
-                SchemaType::MessageSchema
-            }
+            service_gen::SchemaType::MessageSchema => SchemaType::MessageSchema,
         }
     }
 }
 
-impl From<SchemaType> for schema_registry_gen::schema_registry::service::SchemaType {
+impl From<SchemaType> for service_gen::SchemaType {
     fn from(schema_type: SchemaType) -> Self {
         match schema_type {
-            SchemaType::MessageSchema => {
-                schema_registry_gen::schema_registry::service::SchemaType::MessageSchema
-            }
+            SchemaType::MessageSchema => service_gen::SchemaType::MessageSchema,
         }
     }
 }
-
+/// Schema object
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Schema {
     /// Human-readable description of the schema.
@@ -123,10 +103,30 @@ struct Schema {
     pub tags: HashMap<String, String>,
 
     /// Version of the schema. Allowed between 0-9.
-    pub version: String,
+    pub version: u32,
 }
 
-impl From<Schema> for schema_registry_gen::schema_registry::service::Schema {
+impl Ord for Schema {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.version.cmp(&other.version)
+    }
+}
+
+impl PartialOrd for Schema {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for Schema {}
+
+impl PartialEq for Schema {
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version && self.hash == other.hash
+    }
+}
+
+impl From<Schema> for service_gen::Schema {
     fn from(schema: Schema) -> Self {
         Self {
             description: schema.description,
@@ -138,27 +138,22 @@ impl From<Schema> for schema_registry_gen::schema_registry::service::Schema {
             schema_content: Some(schema.schema_content),
             schema_type: Some(schema.schema_type.into()),
             tags: Some(schema.tags),
-            version: Some(schema.version),
+            version: Some(schema.version.to_string()),
         }
-    }
-}
-
-impl Hash for service_gen::PutRequestSchema {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.schema_content.hash(state);
     }
 }
 
 impl From<service_gen::PutRequestSchema> for Schema {
     fn from(put_request_schema: service_gen::PutRequestSchema) -> Self {
         // Create the hash of the schema content
-        let schema_hash = match &put_request_schema.schema_content {
-            Some(content) => {
-                let mut hasher = DefaultHasher::new();
-                content.hash(&mut hasher);
-                hasher.finish().to_string()
-            }
-            None => todo!(),
+        let schema_hash = {
+            let mut hasher = DefaultHasher::new();
+            let content = put_request_schema
+                .schema_content
+                .clone()
+                .expect("Schema content is required");
+            content.hash(&mut hasher);
+            hasher.finish().to_string()
         };
 
         // Transfrom the put request schema into a Schema
@@ -182,7 +177,9 @@ impl From<service_gen::PutRequestSchema> for Schema {
             tags: put_request_schema.tags.unwrap_or_default(),
             version: put_request_schema
                 .version
-                .expect("Schema version is required"),
+                .expect("Schema version is required")
+                .parse()
+                .unwrap(), // TODO: Implement error handling for incorrect version number
         }
     }
 }
