@@ -124,7 +124,10 @@ async fn schema_registry_get(
     match schema_id_rx.await {
         Ok(schema_id) => {
             match client
-                .get(GetRequestBuilder::default().id(schema_id).build().unwrap())
+                .get(
+                    GetRequestBuilder::default().id(schema_id).build().unwrap(),
+                    Duration::from_secs(10),
+                )
                 .await
             {
                 Ok(schema) => {
