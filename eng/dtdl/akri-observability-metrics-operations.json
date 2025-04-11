@@ -1,0 +1,162 @@
+[
+  {
+    "@context": [
+      "dtmi:dtdl:context;4",
+      "dtmi:dtdl:extension:mqtt;2",
+      "dtmi:dtdl:extension:requirement;1"
+    ],
+    "@id": "dtmi:jsonTest:AkriObservabilityService;1",
+    "description": "Defines MQTT-based contract for telemetry in Akri component in AIO",
+    "@type": [
+      "Interface",
+      "Mqtt"
+    ],
+    "payloadFormat": "Json/ecma/404",
+    "commandTopic": "akri/observability/{ex:connectorClientId}/metrics",
+    "schemas": [
+      {
+        "@type": "Object",
+        "@id": "dtmi:com:microsoft:akri:AkriMetric;1",
+        "description": "Metric data",
+        "fields": [
+          {
+            "@type": [
+              "Field",
+              "Required"
+            ],
+            "name": "name",
+            "description": "Name of the metric",
+            "schema": "string"
+          },
+          {
+            "@type": [
+              "Field",
+              "Required"
+            ],
+            "name": "metricType",
+            "description": "Metric type: Counter, Gauge, Histogram",
+            "schema": "dtmi:com:microsoft:akri:AkriMetricType;1"
+          },
+          {
+            "@type": [
+              "Field",
+              "Required"
+            ],
+            "name": "operation",
+            "description": "Operation name: Create, Increment, Record",
+            "schema": "dtmi:com:microsoft:akri:AkriMetricOperation;1"
+          },
+          {
+            "name": "value",
+            "description": "Value of the metric",
+            "schema": "double"
+          },
+          {
+            "@type": "Field",
+            "name": "labels",
+            "description": "Custom labels to associate with the metric",
+            "schema": {
+              "@type": "Map",
+              "mapKey": {
+                "name": "attributeKey",
+                "schema": "string"
+              },
+              "mapValue": {
+                "name": "attributeValue",
+                "schema": "string"
+              }
+            }
+          },
+          {
+            "@type": "Field",
+            "name": "unit",
+            "description": "Unit of the metric",
+            "schema": "string"
+          },
+          {
+            "@type": "Field",
+            "name": "timestamp",
+            "description": "Timestamp of when the metric was recorded",
+            "schema": "dateTime"
+          }
+        ]
+      },
+      {
+        "@type": "Enum",
+        "@id": "dtmi:com:microsoft:akri:AkriMetricType;1",
+        "valueSchema": "string",
+        "description": "Metric type: Counter, Gauge, Histogram",
+        "enumValues": [
+          {
+            "name": "Gauge",
+            "enumValue": "Gauge"
+          },
+          {
+            "name": "Histogram",
+            "enumValue": "Histogram"
+          },
+          {
+            "name": "Counter",
+            "enumValue": "Counter"
+          }
+        ]
+      },
+      {
+        "@type": "Enum",
+        "@id": "dtmi:com:microsoft:akri:AkriMetricOperation;1",
+        "valueSchema": "string",
+        "description": "Operation name: Create metric, Increment counter, Record gauge/histogram",
+        "enumValues": [
+          {
+            "name": "create",
+            "enumValue": "create"
+          },
+          {
+            "name": "increment",
+            "enumValue": "increment"
+          },
+          {
+            "name": "record",
+            "enumValue": "record"
+          }
+        ]
+      },
+      {
+        "@type": "Enum",
+        "@id": "dtmi:com:microsoft:akri:AkriPublishMetricsResponse;1",
+        "valueSchema": "string",
+        "description": "Response type for publishMetrics command",
+        "enumValues": [
+          {
+            "name": "AkriAllMetricsProcessed",
+            "enumValue": "AkriAllMetricsProcessed"
+          },
+          {
+            "name": "AkriSomeMetricsFailed",
+            "enumValue": "AkriSomeMetricsFailed"
+          }
+        ]
+      }
+    ],
+    "contents": [
+      {
+        "@type": "Command",
+        "name": "publishMetrics",
+        "description": "Publish a list of Akri metrics",
+        "request": {
+          "name": "akriMetrics",
+          "description": "List of Akri metrics to publish",
+          "schema": {
+            "@type": "Array",
+            "elementSchema": "dtmi:com:microsoft:akri:AkriMetric;1"
+          }
+        },
+        "response": {
+          "name": "publishMetricsResponse",
+          "description": "Response to the publishMetrics command",
+          "schema": "dtmi:com:microsoft:akri:AkriPublishMetricsResponse;1"
+        }
+      }
+    ]
+  }
+]
