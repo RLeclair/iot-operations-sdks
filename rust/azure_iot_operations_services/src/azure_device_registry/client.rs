@@ -38,6 +38,8 @@ where
     update_device_status_command_invoker: Arc<adr_name_gen::UpdateDeviceStatusCommandInvoker<C>>,
     _notify_on_device_update_command_invoker:
         Arc<adr_name_gen::SetNotificationPreferenceForDeviceUpdatesCommandInvoker<C>>,
+    get_asset_command_invoker: Arc<adr_name_gen::GetAssetCommandInvoker<C>>,
+    update_asset_status_command_invoker: Arc<adr_name_gen::UpdateAssetStatusCommandInvoker<C>>,
 }
 
 impl<C> Client<C>
@@ -76,6 +78,18 @@ where
             ),
             _notify_on_device_update_command_invoker: Arc::new(
                 adr_name_gen::SetNotificationPreferenceForDeviceUpdatesCommandInvoker::new(
+                    application_context.clone(),
+                    client.clone(),
+                    &command_options,
+                ),
+            ),
+            get_asset_command_invoker: Arc::new(adr_name_gen::GetAssetCommandInvoker::new(
+                application_context.clone(),
+                client.clone(),
+                &command_options,
+            )),
+            update_asset_status_command_invoker: Arc::new(
+                adr_name_gen::UpdateAssetStatusCommandInvoker::new(
                     application_context,
                     client.clone(),
                     &command_options,
@@ -231,15 +245,32 @@ where
     ///
     /// # Errors
     /// TODO
-    #[allow(clippy::unused_async)]
     pub async fn get_asset(
         &self,
-        _device_name: String,
-        _inbound_endpoint_name: String,
-        _asset_name: String,
-        _timeout: Duration,
-    ) -> Result<Device, Error> {
-        Err(Error(ErrorKind::PlaceholderError))
+        device_name: String,
+        inbound_endpoint_name: String,
+        asset_name: String,
+        timeout: Duration,
+    ) -> Result<Asset, Error> {
+        let payload = adr_name_gen::GetAssetRequestPayload { asset_name };
+        let command_request = adr_name_gen::GetAssetRequestBuilder::default()
+            .payload(payload)
+            .map_err(ErrorKind::from)?
+            .topic_tokens(HashMap::from([
+                ("deviceName".to_string(), device_name),
+                ("inboundEndpointName".to_string(), inbound_endpoint_name),
+            ]))
+            .timeout(timeout)
+            .build()
+            .map_err(ErrorKind::from)?;
+
+        let response = self
+            .get_asset_command_invoker
+            .invoke(command_request)
+            .await
+            .map_err(ErrorKind::from)?;
+
+        Ok(response.payload.asset.into())
     }
 
     /// Updates the status of an asset in the Azure Device Registry service.
@@ -258,13 +289,36 @@ where
     #[allow(clippy::unused_async)]
     pub async fn update_asset_status(
         &self,
-        _device_name: String,
-        _inbound_endpoint_name: String,
-        _asset_name: String,
-        _status: AssetStatus,
-        _timeout: Duration,
+        device_name: String,
+        inbound_endpoint_name: String,
+        asset_name: String,
+        status: AssetStatus,
+        timeout: Duration,
     ) -> Result<Asset, Error> {
-        Err(Error(ErrorKind::PlaceholderError))
+        let payload = adr_name_gen::UpdateAssetStatusRequestPayload {
+            asset_status_update: adr_name_gen::UpdateAssetStatusRequestSchema {
+                asset_name,
+                asset_status: status.into(),
+            },
+        };
+        let command_request = adr_name_gen::UpdateAssetStatusRequestBuilder::default()
+            .payload(payload)
+            .map_err(ErrorKind::from)?
+            .topic_tokens(HashMap::from([
+                ("deviceName".to_string(), device_name),
+                ("inboundEndpointName".to_string(), inbound_endpoint_name),
+            ]))
+            .timeout(timeout)
+            .build()
+            .map_err(ErrorKind::from)?;
+
+        let response = self
+            .update_asset_status_command_invoker
+            .invoke(command_request)
+            .await
+            .map_err(ErrorKind::from)?;
+
+        Ok(response.payload.updated_asset.into())
     }
 
     /// Starts observation of any Asset updates from the Azure Device Registry service.
