@@ -292,9 +292,7 @@ impl DeviceEndpointCreateObservation {
                                         file_mount_map.update_assets(&device, assets);
                                     });
                                 }
-                                EventKind::Modify(event::ModifyKind::Data(
-                                    event::DataChange::Content,
-                                )) => {
+                                EventKind::Modify(_) => {
                                     debounced_event.paths.iter().for_each(|path| {
                                         let device: DeviceEndpointRef = path
                                             .file_name()
@@ -306,7 +304,7 @@ impl DeviceEndpointCreateObservation {
                                             .unwrap();
 
                                         // Get updated assets
-                                        let assets = get_asset_names(path, &device).unwrap();
+                                        let assets = get_asset_names(path.parent().unwrap(), &device).unwrap();
 
                                         file_mount_map.update_assets(&device, assets);
                                     });
@@ -1026,7 +1024,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_device_endpoint_remove_triggers_asset_deletion_tokens() {
+    async fn test_device_endpoint_remove_triggers_asset_deletion_tokens_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
         let device1_endpoint1 = DeviceEndpointRef {
@@ -1105,6 +1103,175 @@ mod tests {
                         _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
                             panic!("Asset deletion token was not triggered");
                         }
+                    }
+                }
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_single_asset_removal_triggers_deletion_token_success() {
+        let file_mount_manager = TempFileMountManager::new("test_mount");
+
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![
+            AssetRef {
+                name: "asset1".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+            AssetRef {
+                name: "asset2".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+        ];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+
+        temp_env::async_with_vars(
+            [(
+                ADR_RESOURCES_NAME_MOUNT_PATH,
+                Some(file_mount_manager.path()),
+            )],
+            async {
+                let mut test_device_endpoint_create_observation =
+                    DeviceEndpointCreateObservation::new_device_endpoint_create_observation(
+                        DEBOUNCE_DURATION,
+                    )
+                    .unwrap();
+
+                let mut asset_deletion_tokens = HashMap::new();
+
+                tokio::select! {
+                    Some((device_endpoint, mut asset_observation)) = test_device_endpoint_create_observation.recv_notification() => {
+                        assert_eq!(device_endpoint, device1_endpoint1);
+
+                        // Collect asset deletion tokens
+                        for _ in 0..device1_endpoint1_assets.len() {
+                            tokio::select! {
+                                Some((asset, deletion_token)) = asset_observation.recv_notification() => {
+                                    asset_deletion_tokens.insert(asset, deletion_token);
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    panic!("Failed to receive asset creation notification");
+                                }
+                            };
+                        }
+
+                        // Remove a single asset
+                        let asset_to_remove = &device1_endpoint1_assets[0];
+                        file_mount_manager.remove_asset(&device1_endpoint1, asset_to_remove);
+
+                        // Wait for the asset deletion token to be triggered
+                        if let Some(deletion_token) = asset_deletion_tokens.remove(asset_to_remove) {
+                            tokio::select! {
+                                _ = deletion_token => {
+                                    // Token triggered successfully
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    panic!("Asset deletion token was not triggered");
+                                }
+                            }
+                        } else {
+                            panic!("Asset deletion token not found for the removed asset");
+                        }
+
+                        // Check that the other asset's deletion token is still valid
+                        let remaining_asset = &device1_endpoint1_assets[1];
+
+                        if let Some(deletion_token) = asset_deletion_tokens.remove(remaining_asset) {
+                            tokio::select! {
+                                _ = deletion_token => {
+                                    panic!("Asset deletion token was triggered for the remaining asset");
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    // Token not triggered, which is expected
+                                }
+                            }
+                        } else {
+                            panic!("Asset deletion token not found for the remaining asset");
+                        }
+                    },
+                    _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                        panic!("Failed to receive device endpoint creation notification");
+                    }
+                }
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_single_asset_addition_triggers_creation_notification_success() {
+        let file_mount_manager = TempFileMountManager::new("test_mount");
+
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![
+            AssetRef {
+                name: "asset1".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+        ];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+
+        temp_env::async_with_vars(
+            [(
+                ADR_RESOURCES_NAME_MOUNT_PATH,
+                Some(file_mount_manager.path()),
+            )],
+            async {
+                let mut test_device_endpoint_create_observation =
+                    DeviceEndpointCreateObservation::new_device_endpoint_create_observation(
+                        DEBOUNCE_DURATION,
+                    )
+                    .unwrap();
+
+                tokio::select! {
+                    Some((device_endpoint, mut asset_observation)) = test_device_endpoint_create_observation.recv_notification() => {
+                        assert_eq!(device_endpoint, device1_endpoint1);
+
+                        // Collect initial asset creation notifications
+                        for _ in 0..device1_endpoint1_assets.len() {
+                            tokio::select! {
+                                Some((asset, _)) = asset_observation.recv_notification() => {
+                                    assert!(device1_endpoint1_assets.contains(&asset));
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    panic!("Failed to receive initial asset creation notification");
+                                }
+                            };
+                        }
+
+                        // Add a new asset
+                        let new_asset = AssetRef {
+                            name: "asset2".to_string(),
+                            device_name: device1_endpoint1.device_name.clone(),
+                            endpoint_name: device1_endpoint1.endpoint_name.clone(),
+                        };
+                        file_mount_manager.add_asset(&device1_endpoint1, &new_asset);
+
+                        // Wait for the new asset creation notification
+                        tokio::select! {
+                            Some((asset, _)) = asset_observation.recv_notification() => {
+                                assert_eq!(asset, new_asset);
+                            },
+                            _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                panic!("Failed to receive new asset creation notification");
+                            }
+                        }
+                    },
+                    _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                        panic!("Failed to receive device endpoint creation notification");
                     }
                 }
             },
