@@ -9,6 +9,7 @@ use azure_iot_operations_mqtt::session::{
 };
 use azure_iot_operations_protocol::application::ApplicationContextBuilder;
 use azure_iot_operations_services::azure_device_registry;
+
 use env_logger::Builder;
 
 #[tokio::main(flavor = "current_thread")]
@@ -56,6 +57,7 @@ async fn run_program(
 ) {
     let device_name = "my-thermostat".to_string();
     let inbound_endpoint_name = "my-rest-endpoint".to_string();
+    let asset_name = "my-rest-thermostat-asset".to_string();
     let timeout = Duration::from_secs(5);
 
     match azure_device_registry_client
@@ -82,6 +84,30 @@ async fn run_program(
     };
 
     match azure_device_registry_client
+        .observe_asset_update_notifications(
+            device_name.clone(),
+            inbound_endpoint_name.clone(),
+            asset_name.clone(),
+            timeout,
+        )
+        .await
+    {
+        Ok(mut observation) => {
+            tokio::task::spawn({
+                async move {
+                    while let Some((notification, _)) = observation.recv_notification().await {
+                        log::info!("asset updated! {notification:?}");
+                    }
+                    log::info!("asset notification receiver closed");
+                }
+            });
+        }
+        Err(e) => {
+            log::error!("Observing for asset updates failed: {e}");
+        }
+    };
+
+    match azure_device_registry_client
         .get_device(device_name.clone(), inbound_endpoint_name.clone(), timeout)
         .await
     {
@@ -94,8 +120,8 @@ async fn run_program(
             };
             match azure_device_registry_client
                 .update_device_plus_endpoint_status(
-                    device_name,
-                    inbound_endpoint_name,
+                    device_name.clone(),
+                    inbound_endpoint_name.clone(),
                     status,
                     timeout,
                 )
@@ -113,6 +139,68 @@ async fn run_program(
             log::error!("Get device request failed: {e}");
         }
     };
+
+    match azure_device_registry_client
+        .get_asset(
+            device_name.clone(),
+            inbound_endpoint_name.clone(),
+            asset_name.clone(),
+            Duration::from_secs(10),
+        )
+        .await
+    {
+        Ok(asset) => {
+            log::info!("Asset details: {asset:?}");
+            let mut updated_datasets = Vec::new();
+
+            // get the datasets from the obtained asset, dont update it
+            let original_status = asset.status.unwrap();
+            let datasets_schema = original_status.datasets_schema.unwrap_or_default();
+            for dataset in &datasets_schema {
+                // Log the dataset details
+                log::info!("Processing dataset: {dataset:?}");
+
+                // Create an updated version of the dataset with "updated" appended to the name
+                let updated_dataset = azure_device_registry::AssetDatasetEventStream {
+                    error: dataset.error.clone(),
+                    message_schema_reference: dataset.message_schema_reference.clone(),
+                    name: format!("{} updated", dataset.name),
+                };
+
+                // Log the updated dataset details
+                log::info!("Updated dataset: {updated_dataset:?}");
+                updated_datasets.push(updated_dataset);
+            }
+            // now we should update the status of the asset
+            let updated_status = azure_device_registry::AssetStatus {
+                config: original_status.config.clone(),
+                datasets_schema: Some(updated_datasets), // Use the updated datasets here
+                events_schema: original_status.events_schema.clone(),
+                management_groups: original_status.management_groups.clone(),
+                streams: original_status.streams.clone(),
+            };
+            match azure_device_registry_client
+                .update_asset_status(
+                    device_name.clone(),
+                    inbound_endpoint_name.clone(),
+                    asset_name.clone(),
+                    updated_status,
+                    Duration::from_secs(10),
+                )
+                .await
+            {
+                Ok(updated_asset) => {
+                    log::info!("Updated Asset details: {updated_asset:?}");
+                }
+                Err(e) => {
+                    log::error!("Update asset status request failed: {e}");
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Get asset request failed: {e}");
+        }
+    }
 
     // allow time to update Device in ADR service
     // tokio::time::sleep(Duration::from_secs(20)).await;
