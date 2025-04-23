@@ -83,6 +83,11 @@ fn get_asset_names(
             // convert the file content to a string
             let file_content = String::from_utf8(file_content).unwrap();
 
+            // if the file is empty, return an empty vector
+            if file_content.is_empty() {
+                return Ok(vec![]);
+            }
+
             Ok(file_content
                 .split(';')
                 .map(|asset_name| AssetRef {
@@ -140,6 +145,11 @@ impl FileMountMap {
     }
 
     pub fn update_assets(&mut self, device: &DeviceEndpointRef, assets: Vec<AssetRef>) {
+        // Check if the device exists
+        if !self.file_mount_map.contains_key(device) {
+            return;
+        }
+
         // Get the current tracked assets for the device
         let (create_asset_tx, tracked_assets) = &mut self.file_mount_map.get_mut(device).unwrap();
 
@@ -246,7 +256,7 @@ impl DeviceEndpointCreateObservation {
             .for_each(|device| {
                 file_mount_map.insert_device_endpoint(device);
 
-                let assets = get_asset_names(&mount_path, device)
+                get_asset_names(&mount_path, device)
                     .unwrap()
                     .iter()
                     .for_each(|asset| {
@@ -276,6 +286,10 @@ impl DeviceEndpointCreateObservation {
                                             .unwrap();
 
                                         file_mount_map.insert_device_endpoint(&device);
+
+                                        // There is a new file, so we need to get the assets
+                                        let assets = get_asset_names(path.parent().unwrap(), &device).unwrap();
+                                        file_mount_map.update_assets(&device, assets);
                                     });
                                 }
                                 EventKind::Modify(event::ModifyKind::Data(
@@ -597,49 +611,45 @@ mod tests {
         }
 
         fn add_device_endpoint(
-            &self,
-            device_name: &str,
-            endpoint_name: &str,
-            asset_names: &[&str],
+            &self, 
+            device_endpoint: &DeviceEndpointRef,
+            asset_names: &[AssetRef],
         ) {
-            let file_name = format!("{}_{}", device_name, endpoint_name);
-            let file_path = self.dir.path().join(&file_name);
-            let content = asset_names.join(";");
+            let file_path = self.dir.path().join(device_endpoint.to_string());
+            let content: Vec<_> = asset_names.iter().map(|asset| asset.name.clone()).collect();
+            let content = content.join(";");
             fs::write(file_path, content).unwrap();
         }
 
-        fn remove_device_endpoint(&self, device_name: &str, endpoint_name: &str) {
-            let file_name = format!("{}_{}", device_name, endpoint_name);
-            let file_path = self.dir.path().join(&file_name);
+        fn remove_device_endpoint(&self, device_endpoint: &DeviceEndpointRef) {
+            let file_path = self.dir.path().join(device_endpoint.to_string());
             fs::remove_file(file_path).unwrap();
         }
 
-        fn add_asset(&self, device_name: &str, endpoint_name: &str, asset_name: &str) {
-            let file_name = format!("{}_{}", device_name, endpoint_name);
-            let file_path = self.dir.path().join(&file_name);
+        fn add_asset(&self, device_endpoint: &DeviceEndpointRef, asset: &AssetRef) {
+            let file_path = self.dir.path().join(device_endpoint.to_string());
             let mut content = fs::read_to_string(&file_path).unwrap();
 
             // Make sure the asset name is not already present
-            if content.contains(asset_name) {
+            if content.contains(asset.name.as_str()) {
                 return;
             }
             // Append the asset name to the file
             if !content.is_empty() {
                 content.push(';');
             }
-            content.push_str(asset_name);
+            content.push_str(asset.name.as_str());
             fs::write(file_path, content).unwrap();
         }
 
-        fn remove_asset(&self, device_name: &str, endpoint_name: &str, asset_name: &str) {
-            let file_name = format!("{}_{}", device_name, endpoint_name);
-            let file_path = self.dir.path().join(&file_name);
+        fn remove_asset(&self, device_endpoint: &DeviceEndpointRef, asset: &AssetRef) {
+            let file_path = self.dir.path().join(device_endpoint.to_string());
             let mut content = fs::read_to_string(&file_path).unwrap();
 
             // Remove the asset name from the file
             content = content
                 .split(';')
-                .filter(|&name| name != asset_name)
+                .filter(|&name| name != asset.name.as_str())
                 .collect::<Vec<_>>()
                 .join(";");
 
@@ -655,9 +665,46 @@ mod tests {
     fn test_get_device_endpoint_names() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        file_mount_manager.add_device_endpoint("device1", "endpoint1", &["asset1"]);
-        file_mount_manager.add_device_endpoint("device1", "endpoint2", &["asset2", "asset3"]);
-        file_mount_manager.add_device_endpoint("device2", "endpoint3", &["asset3"]);
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![AssetRef {
+            name: "asset1".to_string(),
+            device_name: device1_endpoint1.device_name.clone(),
+            endpoint_name: device1_endpoint1.endpoint_name.clone(),
+        }];
+        let device1_endpoint2 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint2".to_string(),
+        };
+        let device1_endpoint2_assets = vec![
+            AssetRef {
+                name: "asset2".to_string(),
+                device_name: device1_endpoint2.device_name.clone(),
+                endpoint_name: device1_endpoint2.endpoint_name.clone(),
+            },
+            AssetRef {
+                name: "asset3".to_string(),
+                device_name: device1_endpoint2.device_name.clone(),
+                endpoint_name: device1_endpoint2.endpoint_name.clone(),
+            },
+        ];
+        let device2_endpoint3 = DeviceEndpointRef {
+            device_name: "device2".to_string(),
+            endpoint_name: "endpoint3".to_string(),
+        };
+        let device2_endpoint3_assets = vec![
+            AssetRef {
+                name: "asset3".to_string(),
+                device_name: device2_endpoint3.device_name.clone(),
+                endpoint_name: device2_endpoint3.endpoint_name.clone(),
+            },
+        ];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+        file_mount_manager.add_device_endpoint(&device1_endpoint2, &device1_endpoint2_assets);
+        file_mount_manager.add_device_endpoint(&device2_endpoint3, &device2_endpoint3_assets);
 
         temp_env::with_vars(
             [(
@@ -670,18 +717,9 @@ mod tests {
                 let device_endpoints = get_device_endpoint_names(mount_path.as_path()).unwrap();
 
                 assert_eq!(device_endpoints.len(), 3);
-                assert!(device_endpoints.contains(&DeviceEndpointRef {
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint1".to_string(),
-                }));
-                assert!(device_endpoints.contains(&DeviceEndpointRef {
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint2".to_string(),
-                }));
-                assert!(device_endpoints.contains(&DeviceEndpointRef {
-                    device_name: "device2".to_string(),
-                    endpoint_name: "endpoint3".to_string(),
-                }));
+                assert!(device_endpoints.contains(&device1_endpoint1));
+                assert!(device_endpoints.contains(&device1_endpoint2));
+                assert!(device_endpoints.contains(&device2_endpoint3));
             },
         )
     }
@@ -689,11 +727,29 @@ mod tests {
     #[test]
     fn test_get_asset_names() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
-        file_mount_manager.add_device_endpoint(
-            "device1",
-            "endpoint1",
-            &["asset1", "asset2", "asset3"],
-        );
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![
+            AssetRef {
+            name: "asset1".to_string(),
+            device_name: device1_endpoint1.device_name.clone(),
+            endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+            AssetRef {
+            name: "asset2".to_string(),
+            device_name: device1_endpoint1.device_name.clone(),
+            endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+            AssetRef {
+            name: "asset3".to_string(),
+            device_name: device1_endpoint1.device_name.clone(),
+            endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+        ];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
 
         temp_env::with_vars(
             [(
@@ -708,22 +764,26 @@ mod tests {
                 let device1_endpoint1_assets =
                     get_asset_names(mount_path.as_path(), &device_endpoints[0]).unwrap();
 
-                assert_eq!(device1_endpoint1_assets.len(), 3);
-                assert!(device1_endpoint1_assets.contains(&AssetRef {
-                    name: "asset1".to_string(),
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint1".to_string(),
-                }));
-                assert!(device1_endpoint1_assets.contains(&AssetRef {
-                    name: "asset2".to_string(),
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint1".to_string(),
-                }));
-                assert!(device1_endpoint1_assets.contains(&AssetRef {
-                    name: "asset3".to_string(),
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint1".to_string(),
-                }));
+                assert_eq!(
+                    device1_endpoint1_assets,
+                    vec![
+                        AssetRef {
+                            name: "asset1".to_string(),
+                            device_name: "device1".to_string(),
+                            endpoint_name: "endpoint1".to_string(),
+                        },
+                        AssetRef {
+                            name: "asset2".to_string(),
+                            device_name: "device1".to_string(),
+                            endpoint_name: "endpoint1".to_string(),
+                        },
+                        AssetRef {
+                            name: "asset3".to_string(),
+                            device_name: "device1".to_string(),
+                            endpoint_name: "endpoint1".to_string(),
+                        },
+                    ]
+                );
             },
         )
     }
@@ -732,9 +792,31 @@ mod tests {
     async fn test_device_endpoint_create_observation_pre_mounted_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        file_mount_manager.add_device_endpoint("device1", "endpoint1", &Vec::new());
-        file_mount_manager.add_device_endpoint("device1", "endpoint2", &Vec::new());
-        file_mount_manager.add_device_endpoint("device2", "endpoint3", &Vec::new());
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![];
+        let device1_endpoint2 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint2".to_string(),
+        };
+        let device1_endpoint2_assets = vec![];
+        let device2_endpoint3 = DeviceEndpointRef {
+            device_name: "device2".to_string(),
+            endpoint_name: "endpoint3".to_string(),
+        };
+        let device2_endpoint3_assets = vec![];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+        file_mount_manager.add_device_endpoint(&device1_endpoint2, &device1_endpoint2_assets);
+        file_mount_manager.add_device_endpoint(&device2_endpoint3, &device2_endpoint3_assets);
+
+        let mut device_endpoints = HashSet::from([
+            device1_endpoint1.clone(),
+            device1_endpoint2.clone(),
+            device2_endpoint3.clone(),
+        ]);
 
         temp_env::async_with_vars(
             [(
@@ -748,15 +830,283 @@ mod tests {
                     )
                     .unwrap();
         
+                while !device_endpoints.is_empty() {
+                    tokio::select! {
+                        Some((device_endpoint, _)) = test_device_endpoint_create_observation.recv_notification() => {
+                            assert!(device_endpoints.remove(&device_endpoint));
+                        },
+                        _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                            panic!("Failed to receive device endpoint creation notification");
+                        }
+                    };
+                }
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_device_endpoint_create_observation_live_mount_success() {
+        let file_mount_manager = TempFileMountManager::new("test_mount");
+
+        temp_env::async_with_vars(
+            [(
+                ADR_RESOURCES_NAME_MOUNT_PATH,
+                Some(file_mount_manager.path()),
+            )],
+            async {
+                let mut test_device_endpoint_create_observation =
+                    DeviceEndpointCreateObservation::new_device_endpoint_create_observation(
+                        DEBOUNCE_DURATION,
+                    )
+                    .unwrap();
+
+                let device1_endpoint1 = DeviceEndpointRef {
+                    device_name: "device1".to_string(),
+                    endpoint_name: "endpoint1".to_string(),
+                };
+                let device1_endpoint1_assets = vec![];
+                let device1_endpoint2 = DeviceEndpointRef {
+                    device_name: "device1".to_string(),
+                    endpoint_name: "endpoint2".to_string(),
+                };
+                let device1_endpoint2_assets = vec![];
+                let device2_endpoint3 = DeviceEndpointRef {
+                    device_name: "device2".to_string(),
+                    endpoint_name: "endpoint3".to_string(),
+                };
+                let device2_endpoint3_assets = vec![];
+
+                file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+                file_mount_manager.add_device_endpoint(&device1_endpoint2, &device1_endpoint2_assets);
+                file_mount_manager.add_device_endpoint(&device2_endpoint3, &device2_endpoint3_assets);
+        
+                let mut device_endpoints = HashSet::from([
+                    device1_endpoint1.clone(),
+                    device1_endpoint2.clone(),
+                    device2_endpoint3.clone(),
+                ]);
+            
+        
+                while !device_endpoints.is_empty() {
+                    tokio::select! {
+                        Some((device_endpoint, _)) = test_device_endpoint_create_observation.recv_notification() => {
+                            assert!(device_endpoints.remove(&device_endpoint));
+                        },
+                        _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                            panic!("Failed to receive device endpoint creation notification");
+                        }
+                    };
+                }
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_asset_create_observation_pre_mounted_success() {
+        let file_mount_manager = TempFileMountManager::new("test_mount");
+
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![
+            AssetRef {
+                name: "asset1".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+            AssetRef {
+                name: "asset2".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+        ];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+
+        let mut assets: HashSet<AssetRef> = HashSet::from_iter(device1_endpoint1_assets.clone());
+
+        temp_env::async_with_vars(
+            [(
+                ADR_RESOURCES_NAME_MOUNT_PATH,
+                Some(file_mount_manager.path()),
+            )],
+            async {
+                let mut test_device_endpoint_create_observation =
+                    DeviceEndpointCreateObservation::new_device_endpoint_create_observation(
+                        DEBOUNCE_DURATION,
+                    )
+                    .unwrap();
+
                 tokio::select! {
-                    Some((device_endpoint, _)) = test_device_endpoint_create_observation.recv_notification() => {
-                        assert_eq!(device_endpoint.device_name, "device1");
-                        assert_eq!(device_endpoint.endpoint_name, "endpoint1");
+                    Some((device_endpoint, mut asset_observation)) = test_device_endpoint_create_observation.recv_notification() => {
+                        assert_eq!(device_endpoint, device1_endpoint1);
+                        // Observe asset creation
+                        while !assets.is_empty() {
+                            tokio::select! {
+                                Some((asset, _)) = asset_observation.recv_notification() => {
+                                    assert!(assets.remove(&asset));
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    panic!("Failed to receive asset creation notification");
+                                }
+                            };
+                        }
                     },
                     _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
                         panic!("Failed to receive device endpoint creation notification");
                     }
+                }
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_asset_create_observation_live_mount_success() {
+        let file_mount_manager = TempFileMountManager::new("test_mount");
+
+        temp_env::async_with_vars(
+            [(
+                ADR_RESOURCES_NAME_MOUNT_PATH,
+                Some(file_mount_manager.path()),
+            )],
+            async {
+                let mut test_device_endpoint_create_observation =
+                    DeviceEndpointCreateObservation::new_device_endpoint_create_observation(
+                        DEBOUNCE_DURATION,
+                    )
+                    .unwrap();
+
+                let device1_endpoint1 = DeviceEndpointRef {
+                    device_name: "device1".to_string(),
+                    endpoint_name: "endpoint1".to_string(),
                 };
+                let device1_endpoint1_assets = vec![
+                    AssetRef {
+                        name: "asset1".to_string(),
+                        device_name: device1_endpoint1.device_name.clone(),
+                        endpoint_name: device1_endpoint1.endpoint_name.clone(),
+                    },
+                    AssetRef {
+                        name: "asset2".to_string(),
+                        device_name: device1_endpoint1.device_name.clone(),
+                        endpoint_name: device1_endpoint1.endpoint_name.clone(),
+                    },
+                ];
+        
+                file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+        
+                let mut assets: HashSet<AssetRef> = HashSet::from_iter(device1_endpoint1_assets.clone());
+
+                tokio::select! {
+                    Some((device_endpoint, mut asset_observation)) = test_device_endpoint_create_observation.recv_notification() => {
+                        assert_eq!(device_endpoint, device1_endpoint1);
+                        // Observe asset creation
+                        while !assets.is_empty() {
+                            tokio::select! {
+                                Some((asset, _)) = asset_observation.recv_notification() => {
+                                    assert!(assets.remove(&asset));
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    panic!("Failed to receive asset creation notification");
+                                }
+                            };
+                        }
+                    },
+                    _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                        panic!("Failed to receive device endpoint creation notification");
+                    }
+                }
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_device_endpoint_remove_triggers_asset_deletion_tokens() {
+        let file_mount_manager = TempFileMountManager::new("test_mount");
+
+        let device1_endpoint1 = DeviceEndpointRef {
+            device_name: "device1".to_string(),
+            endpoint_name: "endpoint1".to_string(),
+        };
+        let device1_endpoint1_assets = vec![
+            AssetRef {
+                name: "asset1".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+            AssetRef {
+                name: "asset2".to_string(),
+                device_name: device1_endpoint1.device_name.clone(),
+                endpoint_name: device1_endpoint1.endpoint_name.clone(),
+            },
+        ];
+
+        file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
+
+        temp_env::async_with_vars(
+            [(
+                ADR_RESOURCES_NAME_MOUNT_PATH,
+                Some(file_mount_manager.path()),
+            )],
+            async {
+                let mut test_device_endpoint_create_observation =
+                    DeviceEndpointCreateObservation::new_device_endpoint_create_observation(
+                        DEBOUNCE_DURATION,
+                    )
+                    .unwrap();
+
+                let mut asset_deletion_tokens = Vec::new();
+
+                tokio::select! {
+                    Some((device_endpoint, mut asset_observation)) = test_device_endpoint_create_observation.recv_notification() => {
+                        assert_eq!(device_endpoint, device1_endpoint1);
+
+                        // Collect asset deletion tokens
+                        for _ in 0..device1_endpoint1_assets.len() {
+                            tokio::select! {
+                                Some((_, deletion_token)) = asset_observation.recv_notification() => {
+                                    asset_deletion_tokens.push(deletion_token);
+                                },
+                                _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                    panic!("Failed to receive asset creation notification");
+                                }
+                            };
+                        }
+
+                        // Remove the device endpoint
+                        file_mount_manager.remove_device_endpoint(&device1_endpoint1);
+
+                        // Wait for the device endpoint create observation to return None 
+                        tokio::select! {
+                            res = asset_observation.recv_notification() => {
+                                assert!(res.is_none(), "Device endpoint create observation should return None after device endpoint removal");
+                            },
+                            _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                                panic!("Failed to receive device endpoint deletion notification");
+                            }
+                        }
+                    },
+                    _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                        panic!("Failed to receive device endpoint creation notification");
+                    }
+                }
+
+                // Ensure all asset deletion tokens are triggered
+                for deletion_token in asset_deletion_tokens {
+                    tokio::select! {
+                        _ = deletion_token => {
+                            // Token triggered successfully
+                        },
+                        _ = tokio::time::sleep(DEBOUNCE_DURATION * 2) => {
+                            panic!("Asset deletion token was not triggered");
+                        }
+                    }
+                }
             },
         )
         .await
