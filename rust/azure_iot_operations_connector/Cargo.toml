@@ -18,15 +18,21 @@ publish = true
 # derive_builder.workspace = true
 # log.workspace = true
 tokio.workspace = true
-# tokio-util.workspace = true
+tokio-util.workspace = true
 notify.workspace = true
+notify-debouncer-full.workspace = true
 # futures = "0.3"
 # tokio-stream = "0.1"
 thiserror.workspace = true
+log.workspace = true
 
 [dev-dependencies]
 # env_logger.workspace = true
 # test-case.workspace = true
+temp-env = { version = "0.3.6", features = ["async_closure"]}
+tempfile.workspace = true
+test-case.workspace = true
+tokio-test.workspace = true
 
 [lints]
 workspace = true
