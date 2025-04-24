@@ -106,11 +106,10 @@ impl DeviceUpdateObservation {
     }
 }
 
+// ~~~~~~~~~~~~~~~~~~~SDK Created Asset Structs~~~~~~~~~~~~~
 /// A struct to manage receiving notifications for a asset
 #[derive(Debug)]
 pub struct AssetUpdateObservation {
-    /// The name of the asset (for convenience)
-    pub name: String,
     /// The internal channel for receiving update telemetry for this asset
     receiver: Receiver<(Asset, Option<AckToken>)>,
 }
@@ -133,15 +132,22 @@ fn option_vec_from<T, U>(source: Option<Vec<T>>, into_fn: impl Fn(T) -> U) -> Op
     source.map(|vec| vec.into_iter().map(into_fn).collect())
 }
 
+fn vec_from_option_vec<T, U>(source: Option<Vec<T>>, into_fn: impl Fn(T) -> U) -> Vec<U> {
+    source.map_or(vec![], |vec| vec.into_iter().map(into_fn).collect())
+}
+
 // ~~~~~~~~~~~~~~~~~~~Common DTDL Equivalent Structs~~~~~~~~~~~~~
 #[derive(Clone, Debug, Default)]
 pub struct StatusConfig {
-    pub version: Option<u64>,
+    /// Error code for classification of errors.
     pub error: Option<ConfigError>,
+    /// The last time the configuration has been modified.
     pub last_transition_time: Option<String>,
+    /// The version of the asset configuration.
+    pub version: Option<u64>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 /// Represents an error in the configuration of an asset or device.
 pub struct ConfigError {
     /// The code of the error.
@@ -184,6 +190,26 @@ impl From<adr_name_gen::DeviceStatusConfigSchema> for StatusConfig {
             version: value.version,
             error: value.error.map(adr_name_gen::ConfigError::into),
             last_transition_time: value.last_transition_time,
+        }
+    }
+}
+
+impl From<StatusConfig> for adr_name_gen::AssetConfigStatusSchema {
+    fn from(value: StatusConfig) -> Self {
+        adr_name_gen::AssetConfigStatusSchema {
+            error: value.error.map(ConfigError::into),
+            last_transition_time: value.last_transition_time,
+            version: value.version,
+        }
+    }
+}
+
+impl From<adr_name_gen::AssetConfigStatusSchema> for StatusConfig {
+    fn from(value: adr_name_gen::AssetConfigStatusSchema) -> Self {
+        StatusConfig {
+            error: value.error.map(ConfigError::from),
+            last_transition_time: value.last_transition_time,
+            version: value.version,
         }
     }
 }
@@ -536,43 +562,43 @@ pub struct Asset {
 
 #[derive(Clone, Debug)]
 pub struct AssetSpecification {
-    pub asset_type_refs: Option<Vec<String>>,
-    pub attributes: Option<HashMap<String, String>>,
-    pub datasets: Option<Vec<AssetDataset>>,
+    pub asset_type_refs: Vec<String>, // if None, we can represent as empty vec. Can currently only be length of 1
+    pub attributes: HashMap<String, String>, // if None, we can represent as empty hashmap
+    pub datasets: Vec<AssetDataset>,  // if None, we can represent as empty vec
     pub default_datasets_configuration: Option<String>,
-    pub default_datasets_destinations: Option<Vec<AssetAndDefaultDatasetsDestinations>>,
+    pub default_datasets_destinations: Vec<AssetDatasetsDestination>, // if None, we can represent as empty vec.  Can currently only be length of 1
     pub default_events_configuration: Option<String>,
-    pub default_events_destinations: Option<Vec<DefaultEventsAndStreamsDestinations>>,
+    pub default_events_destinations: Vec<EventsAndStreamsDestination>, // if None, we can represent as empty vec.  Can currently only be length of 1
     pub default_management_groups_configuration: Option<String>,
     pub default_streams_configuration: Option<String>,
-    pub default_streams_destinations: Option<Vec<DefaultEventsAndStreamsDestinations>>,
+    pub default_streams_destinations: Vec<EventsAndStreamsDestination>, // if None, we can represent as empty vec. Can currently only be length of 1
     pub description: Option<String>,
     pub device_ref: DeviceRef,
-    pub discovered_asset_refs: Option<Vec<String>>,
+    pub discovered_asset_refs: Vec<String>, // if None, we can represent as empty vec
     pub display_name: Option<String>,
     pub documentation_uri: Option<String>,
-    pub enabled: Option<bool>,
-    pub events: Option<Vec<AssetEvent>>,
+    pub enabled: Option<bool>,   // TODO: just bool?
+    pub events: Vec<AssetEvent>, // if None, we can represent as empty vec
     pub external_asset_id: Option<String>,
     pub hardware_revision: Option<String>,
     pub last_transition_time: Option<String>,
-    pub management_groups: Option<Vec<AssetManagementGroup>>,
+    pub management_groups: Vec<AssetManagementGroup>, // if None, we can represent as empty vec
     pub manufacturer: Option<String>,
     pub manufacturer_uri: Option<String>,
     pub model: Option<String>,
     pub product_code: Option<String>,
     pub serial_number: Option<String>,
     pub software_revision: Option<String>,
-    pub streams: Option<Vec<AssetStream>>,
+    pub streams: Vec<AssetStream>, // if None, we can represent as empty vec
     pub uuid: Option<String>,
     pub version: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
 pub struct AssetDataset {
-    pub data_points: Option<Vec<AssetDatasetDataPoint>>,
+    pub data_points: Vec<AssetDatasetDataPoint>, // if None, we can represent as empty vec
     pub data_source: Option<String>,
-    pub destinations: Option<Vec<AssetAndDefaultDatasetsDestinations>>,
+    pub destinations: Vec<AssetDatasetsDestination>, // if None, we can represent as empty vec. Can currently only be length of 1
     pub name: String,
     pub type_ref: Option<String>,
 }
@@ -586,16 +612,34 @@ pub struct AssetDatasetDataPoint {
 }
 
 #[derive(Clone, Debug)]
-pub struct AssetAndDefaultDatasetsDestinations {
+pub struct AssetDatasetsDestination {
     pub configuration: DestinationConfiguration,
     pub target: DatasetTarget,
 }
+// TODO: switch to this  rust enum
+// pub enum AssetDatasetsDestination {
+//     BrokerStateStore{key: String},
+//     Mqtt{ topic: String,
+//         qos: Option<Qos>,
+//         retain: Option<Retain>,
+//         ttl: Option<u64>},
+//     Storage {path: String},
+// }
 
 #[derive(Clone, Debug)]
-pub struct DefaultEventsAndStreamsDestinations {
+pub struct EventsAndStreamsDestination {
     pub configuration: DestinationConfiguration,
     pub target: EventStreamTarget,
 }
+
+// TODO: switch to this  rust enum
+// pub enum EventsAndStreamsDestination {
+//     Mqtt{ topic: String,
+//         qos: Option<Qos>,
+//         retain: Option<Retain>,
+//         ttl: Option<u64>},
+//     Storage {path: String},
+// }
 
 #[derive(Clone, Debug)]
 pub struct DeviceRef {
@@ -605,8 +649,8 @@ pub struct DeviceRef {
 
 #[derive(Clone, Debug)]
 pub struct AssetEvent {
-    pub data_points: Option<Vec<AssetEventDataPoint>>,
-    pub destinations: Option<Vec<AssetStreamAndEventDestination>>,
+    pub data_points: Vec<AssetEventDataPoint>, // if None, we can represent as empty vec
+    pub destinations: Vec<EventsAndStreamsDestination>, // if None, we can represent as empty vec. Can currently only be length of 1
     pub event_configuration: Option<String>,
     pub event_notifier: String,
     pub name: String,
@@ -615,7 +659,7 @@ pub struct AssetEvent {
 
 #[derive(Clone, Debug)]
 pub struct AssetManagementGroup {
-    pub actions: Option<Vec<AssetManagementGroupAction>>,
+    pub actions: Vec<AssetManagementGroupAction>, // if None, we can represent as empty vec
     pub default_time_out_in_seconds: Option<u32>,
     pub default_topic: Option<String>,
     pub management_group_configuration: Option<String>,
@@ -636,16 +680,10 @@ pub struct AssetManagementGroupAction {
 
 #[derive(Clone, Debug)]
 pub struct AssetStream {
-    pub destinations: Option<Vec<AssetStreamAndEventDestination>>,
+    pub destinations: Vec<EventsAndStreamsDestination>, // if None, we can represent as empty vec. Can currently only be length of 1
     pub name: String,
     pub stream_configuration: Option<String>,
     pub type_ref: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct AssetStreamAndEventDestination {
-    pub configuration: DestinationConfiguration,
-    pub target: EventStreamTarget,
 }
 
 #[derive(Clone, Debug)]
@@ -655,6 +693,7 @@ pub struct AssetEventDataPoint {
     pub name: String,
 }
 
+// TODO: turn into rust enums for which of these options can correlate to which destination enums
 #[derive(Clone, Debug)]
 pub struct DestinationConfiguration {
     pub key: Option<String>,
@@ -665,258 +704,25 @@ pub struct DestinationConfiguration {
     pub ttl: Option<u64>,
 }
 
-impl From<Asset> for adr_name_gen::Asset {
-    fn from(value: Asset) -> Self {
-        adr_name_gen::Asset {
-            name: value.name,
-            specification: value.specification.into(),
-            status: value.status.map(AssetStatus::into),
-        }
-    }
-}
-
-impl From<AssetSpecification> for adr_name_gen::AssetSpecificationSchema {
-    fn from(value: AssetSpecification) -> Self {
-        adr_name_gen::AssetSpecificationSchema {
-            asset_type_refs: value.asset_type_refs,
-            attributes: value.attributes,
-            datasets: option_vec_from(value.datasets, AssetDataset::into),
-            default_datasets_configuration: value.default_datasets_configuration,
-            default_datasets_destinations: option_vec_from(
-                value.default_datasets_destinations,
-                AssetAndDefaultDatasetsDestinations::into,
-            ),
-            default_events_configuration: value.default_events_configuration,
-            default_events_destinations: option_vec_from(
-                value.default_events_destinations,
-                DefaultEventsAndStreamsDestinations::into,
-            ),
-            default_management_groups_configuration: value.default_management_groups_configuration,
-            default_streams_configuration: value.default_streams_configuration,
-            default_streams_destinations: option_vec_from(
-                value.default_streams_destinations,
-                DefaultEventsAndStreamsDestinations::into,
-            ),
-            description: value.description,
-            device_ref: value.device_ref.into(),
-            discovered_asset_refs: value.discovered_asset_refs,
-            display_name: value.display_name,
-            documentation_uri: value.documentation_uri,
-            enabled: value.enabled,
-            events: option_vec_from(value.events, AssetEvent::into),
-            external_asset_id: value.external_asset_id,
-            hardware_revision: value.hardware_revision,
-            last_transition_time: value.last_transition_time,
-            management_groups: option_vec_from(value.management_groups, AssetManagementGroup::into),
-            manufacturer: value.manufacturer,
-            manufacturer_uri: value.manufacturer_uri,
-            model: value.model,
-            product_code: value.product_code,
-            serial_number: value.serial_number,
-            software_revision: value.software_revision,
-            streams: option_vec_from(value.streams, AssetStream::into),
-            uuid: value.uuid,
-            version: value.version,
-        }
-    }
-}
-
-impl From<AssetDataset> for adr_name_gen::AssetDatasetSchemaElementSchema {
-    fn from(value: AssetDataset) -> Self {
-        adr_name_gen::AssetDatasetSchemaElementSchema {
-            data_points: option_vec_from(value.data_points, AssetDatasetDataPoint::into),
-            data_source: value.data_source,
-            destinations: option_vec_from(
-                value.destinations,
-                AssetAndDefaultDatasetsDestinations::into,
-            ),
-            name: value.name,
-            type_ref: value.type_ref,
-        }
-    }
-}
-
-impl From<AssetDatasetDataPoint> for adr_name_gen::AssetDatasetDataPointSchemaElementSchema {
-    fn from(value: AssetDatasetDataPoint) -> Self {
-        adr_name_gen::AssetDatasetDataPointSchemaElementSchema {
-            data_point_configuration: value.data_point_configuration,
-            data_source: value.data_source,
-            name: value.name,
-            type_ref: value.type_ref,
-        }
-    }
-}
-
-impl From<AssetAndDefaultDatasetsDestinations>
-    for adr_name_gen::AssetDatasetDestinationSchemaElementSchema
-{
-    fn from(value: AssetAndDefaultDatasetsDestinations) -> Self {
-        adr_name_gen::AssetDatasetDestinationSchemaElementSchema {
-            configuration: value.configuration.into(),
-            target: value.target.into(),
-        }
-    }
-}
-
-impl From<AssetAndDefaultDatasetsDestinations>
-    for adr_name_gen::DefaultDatasetsDestinationsSchemaElementSchema
-{
-    fn from(value: AssetAndDefaultDatasetsDestinations) -> Self {
-        adr_name_gen::DefaultDatasetsDestinationsSchemaElementSchema {
-            configuration: value.configuration.into(),
-            target: value.target.into(),
-        }
-    }
-}
-
-impl From<DefaultEventsAndStreamsDestinations>
-    for adr_name_gen::DefaultStreamsDestinationsSchemaElementSchema
-{
-    fn from(value: DefaultEventsAndStreamsDestinations) -> Self {
-        adr_name_gen::DefaultStreamsDestinationsSchemaElementSchema {
-            configuration: value.configuration.into(),
-            target: value.target.into(),
-        }
-    }
-}
-
-impl From<DefaultEventsAndStreamsDestinations>
-    for adr_name_gen::DefaultEventsDestinationsSchemaElementSchema
-{
-    fn from(value: DefaultEventsAndStreamsDestinations) -> Self {
-        adr_name_gen::DefaultEventsDestinationsSchemaElementSchema {
-            configuration: value.configuration.into(),
-            target: value.target.into(),
-        }
-    }
-}
-
-impl From<DeviceRef> for adr_name_gen::DeviceRefSchema {
-    fn from(value: DeviceRef) -> Self {
-        adr_name_gen::DeviceRefSchema {
-            device_name: value.device_name,
-            endpoint_name: value.endpoint_name,
-        }
-    }
-}
-
-impl From<AssetEvent> for adr_name_gen::AssetEventSchemaElementSchema {
-    fn from(value: AssetEvent) -> Self {
-        adr_name_gen::AssetEventSchemaElementSchema {
-            data_points: option_vec_from(value.data_points, AssetEventDataPoint::into),
-            destinations: option_vec_from(value.destinations, AssetStreamAndEventDestination::into),
-            event_configuration: value.event_configuration,
-            event_notifier: value.event_notifier,
-            name: value.name,
-            type_ref: value.type_ref,
-        }
-    }
-}
-
-impl From<AssetManagementGroup> for adr_name_gen::AssetManagementGroupSchemaElementSchema {
-    fn from(value: AssetManagementGroup) -> Self {
-        adr_name_gen::AssetManagementGroupSchemaElementSchema {
-            actions: option_vec_from(value.actions, AssetManagementGroupAction::into),
-            default_time_out_in_seconds: value.default_time_out_in_seconds,
-            default_topic: value.default_topic,
-            management_group_configuration: value.management_group_configuration,
-            name: value.name,
-            type_ref: value.type_ref,
-        }
-    }
-}
-
-impl From<AssetManagementGroupAction>
-    for adr_name_gen::AssetManagementGroupActionSchemaElementSchema
-{
-    fn from(value: AssetManagementGroupAction) -> Self {
-        adr_name_gen::AssetManagementGroupActionSchemaElementSchema {
-            action_configuration: value.action_configuration,
-            action_type: value.action_type.into(),
-            name: value.name,
-            target_uri: value.target_uri,
-            time_out_in_seconds: value.time_out_in_seconds,
-            topic: value.topic,
-            type_ref: value.type_ref,
-        }
-    }
-}
-
-impl From<AssetStream> for adr_name_gen::AssetStreamSchemaElementSchema {
-    fn from(value: AssetStream) -> Self {
-        adr_name_gen::AssetStreamSchemaElementSchema {
-            destinations: option_vec_from(value.destinations, AssetStreamAndEventDestination::into),
-            name: value.name,
-            stream_configuration: value.stream_configuration,
-            type_ref: value.type_ref,
-        }
-    }
-}
-
-impl From<AssetStreamAndEventDestination>
-    for adr_name_gen::AssetStreamDestinationSchemaElementSchema
-{
-    fn from(value: AssetStreamAndEventDestination) -> Self {
-        adr_name_gen::AssetStreamDestinationSchemaElementSchema {
-            configuration: value.configuration.into(),
-            target: value.target.into(),
-        }
-    }
-}
-
-impl From<AssetStreamAndEventDestination>
-    for adr_name_gen::AssetEventDestinationSchemaElementSchema
-{
-    fn from(value: AssetStreamAndEventDestination) -> Self {
-        adr_name_gen::AssetEventDestinationSchemaElementSchema {
-            configuration: value.configuration.into(),
-            target: value.target.into(),
-        }
-    }
-}
-
-impl From<AssetEventDataPoint> for adr_name_gen::AssetEventDataPointSchemaElementSchema {
-    fn from(value: AssetEventDataPoint) -> Self {
-        adr_name_gen::AssetEventDataPointSchemaElementSchema {
-            data_point_configuration: value.data_point_configuration,
-            data_source: value.data_source,
-            name: value.name,
-        }
-    }
-}
-
-impl From<DestinationConfiguration> for adr_name_gen::DestinationConfiguration {
-    fn from(value: DestinationConfiguration) -> Self {
-        adr_name_gen::DestinationConfiguration {
-            key: value.key,
-            path: value.path,
-            qos: value.qos.map(Qos::into),
-            retain: value.retain.map(Retain::into),
-            topic: value.topic,
-            ttl: value.ttl,
-        }
-    }
-}
-
 // ~~~~~~~~~~~~~~~~~~~Asset Status DTDL Equivalent Structs~~~~~~~
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 /// Represents the observed status of an asset.
 pub struct AssetStatus {
     /// The configuration of the asset.
-    pub config: Option<Config>,
+    pub config: Option<StatusConfig>,
     /// A collection of datasets associated with the asset.
-    pub datasets_schema: Option<Vec<AssetDatasetEventStream>>,
+    pub datasets_schema: Option<Vec<AssetDatasetEventStreamStatus>>,
     /// A collection of events associated with the asset.
-    pub events_schema: Option<Vec<AssetDatasetEventStream>>,
+    pub events_schema: Option<Vec<AssetDatasetEventStreamStatus>>,
     /// A collection of management groups associated with the asset.
     pub management_groups: Option<Vec<AssetManagementGroupStatus>>,
     /// A collection of schema references for streams associated with the asset.
-    pub streams: Option<Vec<AssetDatasetEventStream>>,
+    pub streams: Option<Vec<AssetDatasetEventStreamStatus>>,
 }
 
 #[derive(Clone, Debug)]
 /// Represents a schema to the dataset or event.
-pub struct AssetDatasetEventStream {
+pub struct AssetDatasetEventStreamStatus {
     /// The name of the dataset or the event.
     pub name: String,
     /// The message schema associated with the dataset or event.
@@ -958,34 +764,23 @@ pub struct MessageSchemaReference {
     pub registry_namespace: String,
 }
 
-#[derive(Clone, Debug)]
-/// Represents the configuration status of an asset.
-pub struct Config {
-    /// Error code for classification of errors.
-    pub error: Option<ConfigError>,
-    /// The last time the configuration has been modified.
-    pub last_transition_time: Option<String>,
-    /// The version of the asset configuration.
-    pub version: Option<u64>,
-}
-
 impl From<AssetStatus> for adr_name_gen::AssetStatus {
     fn from(value: AssetStatus) -> Self {
         adr_name_gen::AssetStatus {
-            config: value.config.map(Config::into),
-            datasets: option_vec_from(value.datasets_schema, AssetDatasetEventStream::into),
-            events: option_vec_from(value.events_schema, AssetDatasetEventStream::into),
+            config: value.config.map(StatusConfig::into),
+            datasets: option_vec_from(value.datasets_schema, AssetDatasetEventStreamStatus::into),
+            events: option_vec_from(value.events_schema, AssetDatasetEventStreamStatus::into),
             management_groups: option_vec_from(
                 value.management_groups,
                 AssetManagementGroupStatus::into,
             ),
-            streams: option_vec_from(value.streams, AssetDatasetEventStream::into),
+            streams: option_vec_from(value.streams, AssetDatasetEventStreamStatus::into),
         }
     }
 }
 
-impl From<AssetDatasetEventStream> for adr_name_gen::AssetDatasetEventStreamStatus {
-    fn from(value: AssetDatasetEventStream) -> Self {
+impl From<AssetDatasetEventStreamStatus> for adr_name_gen::AssetDatasetEventStreamStatus {
+    fn from(value: AssetDatasetEventStreamStatus) -> Self {
         adr_name_gen::AssetDatasetEventStreamStatus {
             name: value.name,
             message_schema_reference: value
@@ -1034,23 +829,6 @@ impl From<MessageSchemaReference> for adr_name_gen::MessageSchemaReference {
     }
 }
 
-impl From<Config> for adr_name_gen::AssetConfigStatusSchema {
-    fn from(value: Config) -> Self {
-        adr_name_gen::AssetConfigStatusSchema {
-            error: value.error.map(ConfigError::into),
-            last_transition_time: value.last_transition_time,
-            version: value.version,
-        }
-    }
-}
-
-// ~~~~~~~~~~~~~~~~~~~ Asset Observation Event DTDL Equivalent Structs~~~~~~~
-
-#[derive(Clone, Debug)]
-pub struct AssetUpdateEvent {
-    pub asset: Asset,
-    pub asset_name: String,
-}
 // ~~~~~~~~~~~~~~~~~~~Detected Asset DTDL Equivalent Structs~~~~~~~
 #[derive(Clone, Debug)]
 pub struct DetectedAsset {
@@ -1134,6 +912,7 @@ impl From<DetectedAssetDataPoint> for adr_name_gen::DetectedAssetDataPointSchema
 }
 
 // ~~~~~~~~~~~~~~~~~~~DTDL Equivalent Enums~~~~~~~
+// TODO: remove in favor of Rust enum
 #[derive(Clone, Debug)]
 pub enum EventStreamTarget {
     Mqtt,
@@ -1152,6 +931,7 @@ pub enum Retain {
     Never,
 }
 
+// TODO: remove in favor of Rust enum
 #[derive(Clone, Debug)]
 pub enum DatasetTarget {
     BrokerStateStore,
@@ -1166,59 +946,11 @@ pub enum AssetManagementGroupActionType {
     Write,
 }
 
-impl From<EventStreamTarget> for adr_name_gen::EventStreamTarget {
-    fn from(value: EventStreamTarget) -> Self {
-        match value {
-            EventStreamTarget::Mqtt => Self::Mqtt,
-            EventStreamTarget::Storage => Self::Storage,
-        }
-    }
-}
-
-impl From<Qos> for adr_name_gen::Qos {
-    fn from(value: Qos) -> Self {
-        match value {
-            Qos::Qos0 => Self::Qos0,
-            Qos::Qos1 => Self::Qos1,
-        }
-    }
-}
-
 impl From<Retain> for adr_name_gen::Retain {
     fn from(value: Retain) -> Self {
         match value {
             Retain::Keep => Self::Keep,
             Retain::Never => Self::Never,
-        }
-    }
-}
-
-impl From<DatasetTarget> for adr_name_gen::DatasetTarget {
-    fn from(value: DatasetTarget) -> Self {
-        match value {
-            DatasetTarget::BrokerStateStore => Self::BrokerStateStore,
-            DatasetTarget::Mqtt => Self::Mqtt,
-            DatasetTarget::Storage => Self::Storage,
-        }
-    }
-}
-
-impl From<AssetManagementGroupActionType> for adr_name_gen::AssetManagementGroupActionTypeSchema {
-    fn from(value: AssetManagementGroupActionType) -> Self {
-        match value {
-            AssetManagementGroupActionType::Call => Self::Call,
-            AssetManagementGroupActionType::Read => Self::Read,
-            AssetManagementGroupActionType::Write => Self::Write,
-        }
-    }
-}
-
-// ~~~~~~~~~~~~~~DTDL structs to SDK Asset Structs for Asset Observation Need~~~~~~~
-impl From<adr_name_gen::AssetUpdateEventSchema> for AssetUpdateEvent {
-    fn from(value: adr_name_gen::AssetUpdateEventSchema) -> Self {
-        AssetUpdateEvent {
-            asset: value.asset.into(),
-            asset_name: value.asset_name,
         }
     }
 }
@@ -1236,14 +968,14 @@ impl From<adr_name_gen::Asset> for Asset {
 impl From<adr_name_gen::AssetStatus> for AssetStatus {
     fn from(value: adr_name_gen::AssetStatus) -> Self {
         AssetStatus {
-            config: value.config.map(Config::from),
-            datasets_schema: option_vec_from(value.datasets, AssetDatasetEventStream::from),
-            events_schema: option_vec_from(value.events, AssetDatasetEventStream::from),
+            config: value.config.map(StatusConfig::from),
+            datasets_schema: option_vec_from(value.datasets, AssetDatasetEventStreamStatus::from),
+            events_schema: option_vec_from(value.events, AssetDatasetEventStreamStatus::from),
             management_groups: option_vec_from(
                 value.management_groups,
                 AssetManagementGroupStatus::from,
             ),
-            streams: option_vec_from(value.streams, AssetDatasetEventStream::from),
+            streams: option_vec_from(value.streams, AssetDatasetEventStreamStatus::from),
         }
     }
 }
@@ -1276,9 +1008,9 @@ impl From<adr_name_gen::AssetManagementGroupActionStatusSchemaElementSchema>
     }
 }
 
-impl From<adr_name_gen::AssetDatasetEventStreamStatus> for AssetDatasetEventStream {
+impl From<adr_name_gen::AssetDatasetEventStreamStatus> for AssetDatasetEventStreamStatus {
     fn from(value: adr_name_gen::AssetDatasetEventStreamStatus) -> Self {
-        AssetDatasetEventStream {
+        AssetDatasetEventStreamStatus {
             name: value.name,
             message_schema_reference: value
                 .message_schema_reference
@@ -1298,56 +1030,49 @@ impl From<adr_name_gen::MessageSchemaReference> for MessageSchemaReference {
     }
 }
 
-impl From<adr_name_gen::AssetConfigStatusSchema> for Config {
-    fn from(value: adr_name_gen::AssetConfigStatusSchema) -> Self {
-        Config {
-            error: value.error.map(ConfigError::from),
-            last_transition_time: value.last_transition_time,
-            version: value.version,
-        }
-    }
-}
-
 impl From<adr_name_gen::AssetSpecificationSchema> for AssetSpecification {
     fn from(value: adr_name_gen::AssetSpecificationSchema) -> Self {
         AssetSpecification {
-            asset_type_refs: value.asset_type_refs,
-            attributes: value.attributes,
-            datasets: option_vec_from(value.datasets, AssetDataset::from),
+            asset_type_refs: value.asset_type_refs.unwrap_or_default(),
+            attributes: value.attributes.unwrap_or_default(),
+            datasets: vec_from_option_vec(value.datasets, AssetDataset::from),
             default_datasets_configuration: value.default_datasets_configuration,
-            default_datasets_destinations: option_vec_from(
+            default_datasets_destinations: vec_from_option_vec(
                 value.default_datasets_destinations,
-                AssetAndDefaultDatasetsDestinations::from,
+                AssetDatasetsDestination::from,
             ),
             default_events_configuration: value.default_events_configuration,
-            default_events_destinations: option_vec_from(
+            default_events_destinations: vec_from_option_vec(
                 value.default_events_destinations,
-                DefaultEventsAndStreamsDestinations::from,
+                EventsAndStreamsDestination::from,
             ),
             default_management_groups_configuration: value.default_management_groups_configuration,
             default_streams_configuration: value.default_streams_configuration,
-            default_streams_destinations: option_vec_from(
+            default_streams_destinations: vec_from_option_vec(
                 value.default_streams_destinations,
-                DefaultEventsAndStreamsDestinations::from,
+                EventsAndStreamsDestination::from,
             ),
             description: value.description,
             device_ref: DeviceRef::from(value.device_ref),
-            discovered_asset_refs: value.discovered_asset_refs,
+            discovered_asset_refs: value.discovered_asset_refs.unwrap_or_default(),
             display_name: value.display_name,
             documentation_uri: value.documentation_uri,
             enabled: value.enabled,
-            events: option_vec_from(value.events, AssetEvent::from),
+            events: vec_from_option_vec(value.events, AssetEvent::from),
             external_asset_id: value.external_asset_id,
             hardware_revision: value.hardware_revision,
             last_transition_time: value.last_transition_time,
-            management_groups: option_vec_from(value.management_groups, AssetManagementGroup::from),
+            management_groups: vec_from_option_vec(
+                value.management_groups,
+                AssetManagementGroup::from,
+            ),
             manufacturer: value.manufacturer,
             manufacturer_uri: value.manufacturer_uri,
             model: value.model,
             product_code: value.product_code,
             serial_number: value.serial_number,
             software_revision: value.software_revision,
-            streams: option_vec_from(value.streams, AssetStream::from),
+            streams: vec_from_option_vec(value.streams, AssetStream::from),
             uuid: value.uuid,
             version: value.version,
         }
@@ -1357,12 +1082,9 @@ impl From<adr_name_gen::AssetSpecificationSchema> for AssetSpecification {
 impl From<adr_name_gen::AssetDatasetSchemaElementSchema> for AssetDataset {
     fn from(value: adr_name_gen::AssetDatasetSchemaElementSchema) -> Self {
         AssetDataset {
-            data_points: option_vec_from(value.data_points, AssetDatasetDataPoint::from),
+            data_points: vec_from_option_vec(value.data_points, AssetDatasetDataPoint::from),
             data_source: value.data_source,
-            destinations: option_vec_from(
-                value.destinations,
-                AssetAndDefaultDatasetsDestinations::from,
-            ),
+            destinations: vec_from_option_vec(value.destinations, AssetDatasetsDestination::from),
             name: value.name,
             type_ref: value.type_ref,
         }
@@ -1380,11 +1102,9 @@ impl From<adr_name_gen::AssetDatasetDataPointSchemaElementSchema> for AssetDatas
     }
 }
 
-impl From<adr_name_gen::AssetDatasetDestinationSchemaElementSchema>
-    for AssetAndDefaultDatasetsDestinations
-{
+impl From<adr_name_gen::AssetDatasetDestinationSchemaElementSchema> for AssetDatasetsDestination {
     fn from(value: adr_name_gen::AssetDatasetDestinationSchemaElementSchema) -> Self {
-        AssetAndDefaultDatasetsDestinations {
+        AssetDatasetsDestination {
             configuration: value.configuration.into(),
             target: value.target.into(),
         }
@@ -1392,10 +1112,10 @@ impl From<adr_name_gen::AssetDatasetDestinationSchemaElementSchema>
 }
 
 impl From<adr_name_gen::DefaultDatasetsDestinationsSchemaElementSchema>
-    for AssetAndDefaultDatasetsDestinations
+    for AssetDatasetsDestination
 {
     fn from(value: adr_name_gen::DefaultDatasetsDestinationsSchemaElementSchema) -> Self {
-        AssetAndDefaultDatasetsDestinations {
+        AssetDatasetsDestination {
             configuration: value.configuration.into(),
             target: value.target.into(),
         }
@@ -1403,10 +1123,10 @@ impl From<adr_name_gen::DefaultDatasetsDestinationsSchemaElementSchema>
 }
 
 impl From<adr_name_gen::DefaultEventsDestinationsSchemaElementSchema>
-    for DefaultEventsAndStreamsDestinations
+    for EventsAndStreamsDestination
 {
     fn from(value: adr_name_gen::DefaultEventsDestinationsSchemaElementSchema) -> Self {
-        DefaultEventsAndStreamsDestinations {
+        EventsAndStreamsDestination {
             configuration: value.configuration.into(),
             target: value.target.into(),
         }
@@ -1414,10 +1134,10 @@ impl From<adr_name_gen::DefaultEventsDestinationsSchemaElementSchema>
 }
 
 impl From<adr_name_gen::DefaultStreamsDestinationsSchemaElementSchema>
-    for DefaultEventsAndStreamsDestinations
+    for EventsAndStreamsDestination
 {
     fn from(value: adr_name_gen::DefaultStreamsDestinationsSchemaElementSchema) -> Self {
-        DefaultEventsAndStreamsDestinations {
+        EventsAndStreamsDestination {
             configuration: value.configuration.into(),
             target: value.target.into(),
         }
@@ -1436,8 +1156,11 @@ impl From<adr_name_gen::DeviceRefSchema> for DeviceRef {
 impl From<adr_name_gen::AssetEventSchemaElementSchema> for AssetEvent {
     fn from(value: adr_name_gen::AssetEventSchemaElementSchema) -> Self {
         AssetEvent {
-            data_points: option_vec_from(value.data_points, AssetEventDataPoint::from),
-            destinations: option_vec_from(value.destinations, AssetStreamAndEventDestination::from),
+            data_points: vec_from_option_vec(value.data_points, AssetEventDataPoint::from),
+            destinations: vec_from_option_vec(
+                value.destinations,
+                EventsAndStreamsDestination::from,
+            ),
             event_configuration: value.event_configuration,
             event_notifier: value.event_notifier,
             name: value.name,
@@ -1446,11 +1169,9 @@ impl From<adr_name_gen::AssetEventSchemaElementSchema> for AssetEvent {
     }
 }
 
-impl From<adr_name_gen::AssetEventDestinationSchemaElementSchema>
-    for AssetStreamAndEventDestination
-{
+impl From<adr_name_gen::AssetEventDestinationSchemaElementSchema> for EventsAndStreamsDestination {
     fn from(value: adr_name_gen::AssetEventDestinationSchemaElementSchema) -> Self {
-        AssetStreamAndEventDestination {
+        EventsAndStreamsDestination {
             configuration: value.configuration.into(),
             target: value.target.into(),
         }
@@ -1470,7 +1191,7 @@ impl From<adr_name_gen::AssetEventDataPointSchemaElementSchema> for AssetEventDa
 impl From<adr_name_gen::AssetManagementGroupSchemaElementSchema> for AssetManagementGroup {
     fn from(value: adr_name_gen::AssetManagementGroupSchemaElementSchema) -> Self {
         AssetManagementGroup {
-            actions: option_vec_from(value.actions, AssetManagementGroupAction::from),
+            actions: vec_from_option_vec(value.actions, AssetManagementGroupAction::from),
             default_time_out_in_seconds: value.default_time_out_in_seconds,
             default_topic: value.default_topic,
             management_group_configuration: value.management_group_configuration,
@@ -1514,7 +1235,10 @@ impl From<adr_name_gen::AssetManagementGroupActionTypeSchema> for AssetManagemen
 impl From<adr_name_gen::AssetStreamSchemaElementSchema> for AssetStream {
     fn from(value: adr_name_gen::AssetStreamSchemaElementSchema) -> Self {
         AssetStream {
-            destinations: option_vec_from(value.destinations, AssetStreamAndEventDestination::from),
+            destinations: vec_from_option_vec(
+                value.destinations,
+                EventsAndStreamsDestination::from,
+            ),
             name: value.name,
             stream_configuration: value.stream_configuration,
             type_ref: value.type_ref,
@@ -1522,11 +1246,9 @@ impl From<adr_name_gen::AssetStreamSchemaElementSchema> for AssetStream {
     }
 }
 
-impl From<adr_name_gen::AssetStreamDestinationSchemaElementSchema>
-    for AssetStreamAndEventDestination
-{
+impl From<adr_name_gen::AssetStreamDestinationSchemaElementSchema> for EventsAndStreamsDestination {
     fn from(value: adr_name_gen::AssetStreamDestinationSchemaElementSchema) -> Self {
-        AssetStreamAndEventDestination {
+        EventsAndStreamsDestination {
             configuration: value.configuration.into(),
             target: value.target.into(),
         }

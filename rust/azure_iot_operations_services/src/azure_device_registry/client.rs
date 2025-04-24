@@ -73,7 +73,7 @@ where
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         application_context: ApplicationContext,
-        client: &C,
+        client: C,
         options: ClientOptions,
     ) -> Result<Self, Error> {
         let command_options = CommandInvokerOptionsBuilder::default()
@@ -172,12 +172,50 @@ where
             notify_on_asset_update_command_invoker: Arc::new(
                 adr_name_gen::SetNotificationPreferenceForAssetUpdatesCommandInvoker::new(
                     application_context,
-                    client.clone(),
+                    client,
                     &command_options,
                 ),
             ),
             asset_update_notification_dispatcher,
         })
+    }
+
+    /// Convenience function to get all observed device endpoint device & inbound endpoint names to quickly unobserve all of them before cleaning up
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn get_all_observed_device_endpoints(&self) -> Vec<(String, String)> {
+        let mut device_endpoints = Vec::new();
+        for device_receiver_id in self
+            .device_update_notification_dispatcher
+            .get_all_receiver_ids()
+        {
+            // best effort, if the id can't be parsed, then skip it
+            if let Some((device_name, inbound_endpoint_name)) =
+                Self::un_hash_device_endpoint(&device_receiver_id)
+            {
+                device_endpoints.push((device_name, inbound_endpoint_name));
+            }
+        }
+        device_endpoints
+    }
+
+    /// Convenience function to get all observed asset names to quickly unobserve all of them before cleaning up
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn get_all_observed_assets(&self) -> Vec<(String, String, String)> {
+        let mut assets = Vec::new();
+        for receiver_id in self
+            .asset_update_notification_dispatcher
+            .get_all_receiver_ids()
+        {
+            // best effort, if the id can't be parsed, then skip it
+            if let Some((device_name, inbound_endpoint_name, asset_name)) =
+                Self::un_hash_device_endpoint_asset(&receiver_id)
+            {
+                assets.push((device_name, inbound_endpoint_name, asset_name));
+            }
+        }
+        assets
     }
 
     /// Shutdown the [`Client`]. Shuts down the underlying command invokers.
@@ -331,13 +369,13 @@ where
                             );
                             match device_update_notification_dispatcher.dispatch(&receiver_id, (device_update_telemetry.payload.into(), ack_token)) {
                                 Ok(()) => {
-                                    log::debug!("Device Update Notification dispatched for device '{device_name:?}' and inbound endpoint '{inbound_endpoint_name:?}'");
+                                    log::debug!("Device Update Notification dispatched for device {device_name:?} and inbound endpoint {inbound_endpoint_name:?}");
                                 }
                                 Err(DispatchError::SendError(payload)) => {
-                                    log::warn!("Device Update Observation has been dropped. Received Device Update Notification: {payload:?}");
+                                    log::warn!("Device Update Observation has been dropped. Received Device Update Notification: {payload:#?}");
                                 }
-                                Err(DispatchError::NotFound(payload)) => {
-                                    log::warn!("Device Endpoint is not being observed. Received Device Update Notification: {payload:?}");
+                                Err(DispatchError::NotFound((receiver_id, (payload, _)))) => {
+                                    log::warn!("Device Endpoint is not being observed. Received Device Update Notification: {payload:#?} for {receiver_id:?}");
                                 }
                             }
                         },
@@ -377,7 +415,7 @@ where
                             let receiver_id = Self::hash_device_endpoint_asset(device_name, inbound_endpoint_name, &asset_update_telemetry.payload.asset_update_event.asset_name);
                             match asset_update_notification_dispatcher.dispatch(&receiver_id, (asset_update_telemetry.payload.asset_update_event.asset.into(), ack_token)) {
                                 Ok(()) => {
-                                    log::debug!("Asset Update Notification dispatched for device '{device_name:?}', inbound endpoint '{inbound_endpoint_name:?}', and asset '{:?}'", asset_update_telemetry.payload.asset_update_event.asset_name);
+                                    log::debug!("Asset Update Notification dispatched for device {device_name:?}, inbound endpoint {inbound_endpoint_name:?}, and asset {:?}", asset_update_telemetry.payload.asset_update_event.asset_name);
                                 }
                                 Err(DispatchError::SendError(payload)) => {
                                     log::warn!("Asset Update Observation has been dropped. Received Asset Update Notification: {payload:?}",);
@@ -483,6 +521,8 @@ where
     }
 
     /// Starts observation of any Device updates from the Azure Device Registry service.
+    ///
+    /// Note: On cleanup, unobserve should always be called so that the service knows to stop sending notifications.
     ///
     /// # Arguments
     /// * `device_name` - The name of the Device.
@@ -636,6 +676,14 @@ where
         format!("{device_name}~{inbound_endpoint_name}")
     }
 
+    fn un_hash_device_endpoint(hashed_device_endpoint: &str) -> Option<(String, String)> {
+        hashed_device_endpoint
+            .split_once('~')
+            .map(|(device_name, inbound_endpoint_name)| {
+                (device_name.to_string(), inbound_endpoint_name.to_string())
+            })
+    }
+
     // ~~~~~~~~~~~~~~~~~ Asset APIs ~~~~~~~~~~~~~~~~~~~~~
 
     /// Retrieves an asset from a Azure Device Registry service.
@@ -721,6 +769,8 @@ where
 
     /// Starts observation of any Asset updates from the Azure Device Registry service.
     ///
+    /// Note: On cleanup, unobserve should always be called so that the service knows to stop sending notifications.
+    ///
     /// # Arguments
     /// * `device_name` - The name of the Device.
     /// * `inbound_endpoint_name` - The name of the inbound endpoint.
@@ -750,7 +800,7 @@ where
         let payload = adr_name_gen::SetNotificationPreferenceForAssetUpdatesRequestPayload {
             notification_preference_request:
                 adr_name_gen::SetNotificationPreferenceForAssetUpdatesRequestSchema {
-                    asset_name: asset_name.clone(),
+                    asset_name,
                     notification_preference: adr_name_gen::NotificationPreference::On,
                 },
         };
@@ -774,10 +824,7 @@ where
                 if let adr_name_gen::NotificationPreferenceResponse::Accepted =
                     response.payload.notification_preference_response
                 {
-                    Ok(AssetUpdateObservation {
-                        name: asset_name.clone(),
-                        receiver: rx,
-                    })
+                    Ok(AssetUpdateObservation { receiver: rx })
                 } else {
                     // If the observe request wasn't successful, remove it from our dispatcher
                     if self
@@ -894,5 +941,20 @@ where
     ) -> String {
         // `~`` can't be in a topic token, so this will never collide with another device + inbound endpoint + asset name combo
         format!("{device_name}~{inbound_endpoint_name}~{asset_name}")
+    }
+
+    fn un_hash_device_endpoint_asset(
+        hashed_device_endpoint_asset: &str,
+    ) -> Option<(String, String, String)> {
+        let pieces: Vec<&str> = hashed_device_endpoint_asset.split('~').collect();
+        if pieces.len() >= 3 {
+            Some((
+                pieces[0].to_string(),
+                pieces[1].to_string(),
+                pieces[2].to_string(),
+            ))
+        } else {
+            None
+        }
     }
 }
