@@ -551,6 +551,7 @@ impl std::future::Future for AssetDeletionToken {
     }
 }
 
+// ~~~~~~~~~~~~~~~~~ Tests ~~~~~~~~~~~~~~~~~~~~~
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,6 +560,28 @@ mod tests {
     use std::fs;
 
     const DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
+
+    // Macro to create a device endpoint reference and associated asset references
+    macro_rules! device_with_assets {
+        ($device_name:expr, $endpoint_name:expr $(, $asset_name:expr)*) => {
+            {
+                let device_endpoint = DeviceEndpointRef {
+                    device_name: $device_name.to_string(),
+                    endpoint_name: $endpoint_name.to_string(),
+                };
+                let assets = vec![
+                    $(
+                        AssetRef {
+                            name: $asset_name.to_string(),
+                            device_name: $device_name.to_string(),
+                            endpoint_name: $endpoint_name.to_string(),
+                        }
+                    ),*
+                ];
+                (device_endpoint, assets)
+            }
+        };
+    }
 
     struct TempFileMountManager {
         dir: tempfile::TempDir,
@@ -626,40 +649,12 @@ mod tests {
     fn test_get_device_endpoint_names() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![AssetRef {
-            name: "asset1".to_string(),
-            device_name: device1_endpoint1.device_name.clone(),
-            endpoint_name: device1_endpoint1.endpoint_name.clone(),
-        }];
-        let device1_endpoint2 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint2".to_string(),
-        };
-        let device1_endpoint2_assets = vec![
-            AssetRef {
-                name: "asset2".to_string(),
-                device_name: device1_endpoint2.device_name.clone(),
-                endpoint_name: device1_endpoint2.endpoint_name.clone(),
-            },
-            AssetRef {
-                name: "asset3".to_string(),
-                device_name: device1_endpoint2.device_name.clone(),
-                endpoint_name: device1_endpoint2.endpoint_name.clone(),
-            },
-        ];
-        let device2_endpoint3 = DeviceEndpointRef {
-            device_name: "device2".to_string(),
-            endpoint_name: "endpoint3".to_string(),
-        };
-        let device2_endpoint3_assets = vec![AssetRef {
-            name: "asset3".to_string(),
-            device_name: device2_endpoint3.device_name.clone(),
-            endpoint_name: device2_endpoint3.endpoint_name.clone(),
-        }];
+        let (device1_endpoint1, device1_endpoint1_assets) =
+            device_with_assets!("device1", "endpoint1", "asset1");
+        let (device1_endpoint2, device1_endpoint2_assets) = 
+            device_with_assets!("device1", "endpoint2", "asset2", "asset3");
+        let (device2_endpoint3, device2_endpoint3_assets) = 
+            device_with_assets!("device2", "endpoint3", "asset3");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
         file_mount_manager.add_device_endpoint(&device1_endpoint2, &device1_endpoint2_assets);
@@ -686,27 +681,9 @@ mod tests {
     #[test]
     fn test_get_asset_names() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![
-            AssetRef {
-                name: "asset1".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-            AssetRef {
-                name: "asset2".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-            AssetRef {
-                name: "asset3".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-        ];
+
+        let (device1_endpoint1, device1_endpoint1_assets) =
+            device_with_assets!("device1", "endpoint1", "asset1", "asset2", "asset3");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
 
@@ -751,21 +728,12 @@ mod tests {
     async fn test_device_endpoint_create_observation_pre_mounted_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![];
-        let device1_endpoint2 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint2".to_string(),
-        };
-        let device1_endpoint2_assets = vec![];
-        let device2_endpoint3 = DeviceEndpointRef {
-            device_name: "device2".to_string(),
-            endpoint_name: "endpoint3".to_string(),
-        };
-        let device2_endpoint3_assets = vec![];
+        let (device1_endpoint1, device1_endpoint1_assets) =
+            device_with_assets!("device1", "endpoint1");
+        let (device1_endpoint2, device1_endpoint2_assets) =
+            device_with_assets!("device1", "endpoint2");
+        let (device2_endpoint3, device2_endpoint3_assets) =
+            device_with_assets!("device2", "endpoint3");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
         file_mount_manager.add_device_endpoint(&device1_endpoint2, &device1_endpoint2_assets);
@@ -788,7 +756,7 @@ mod tests {
                         DEBOUNCE_DURATION,
                     )
                     .unwrap();
-        
+
                 while !device_endpoints.is_empty() {
                     tokio::select! {
                         Some((device_endpoint, _)) = test_device_endpoint_create_observation.recv_notification() => {
@@ -820,21 +788,18 @@ mod tests {
                     )
                     .unwrap();
 
-                let device1_endpoint1 = DeviceEndpointRef {
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint1".to_string(),
-                };
-                let device1_endpoint1_assets = vec![];
-                let device1_endpoint2 = DeviceEndpointRef {
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint2".to_string(),
-                };
-                let device1_endpoint2_assets = vec![];
-                let device2_endpoint3 = DeviceEndpointRef {
-                    device_name: "device2".to_string(),
-                    endpoint_name: "endpoint3".to_string(),
-                };
-                let device2_endpoint3_assets = vec![];
+                let (
+                    device1_endpoint1,
+                    device1_endpoint1_assets,
+                ) = device_with_assets!("device1", "endpoint1");
+                let (
+                    device1_endpoint2,
+                    device1_endpoint2_assets,
+                ) = device_with_assets!("device1", "endpoint2");
+                let (
+                    device2_endpoint3,
+                    device2_endpoint3_assets,
+                ) = device_with_assets!("device2", "endpoint3");
 
                 file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
                 file_mount_manager.add_device_endpoint(&device1_endpoint2, &device1_endpoint2_assets);
@@ -866,22 +831,10 @@ mod tests {
     async fn test_asset_create_observation_pre_mounted_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![
-            AssetRef {
-                name: "asset1".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-            AssetRef {
-                name: "asset2".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-        ];
+        let (
+            device1_endpoint1,
+            device1_endpoint1_assets,
+        ) = device_with_assets!("device1", "endpoint1", "asset1", "asset2");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
 
@@ -939,22 +892,10 @@ mod tests {
                     )
                     .unwrap();
 
-                let device1_endpoint1 = DeviceEndpointRef {
-                    device_name: "device1".to_string(),
-                    endpoint_name: "endpoint1".to_string(),
-                };
-                let device1_endpoint1_assets = vec![
-                    AssetRef {
-                        name: "asset1".to_string(),
-                        device_name: device1_endpoint1.device_name.clone(),
-                        endpoint_name: device1_endpoint1.endpoint_name.clone(),
-                    },
-                    AssetRef {
-                        name: "asset2".to_string(),
-                        device_name: device1_endpoint1.device_name.clone(),
-                        endpoint_name: device1_endpoint1.endpoint_name.clone(),
-                    },
-                ];
+                let (
+                    device1_endpoint1,
+                    device1_endpoint1_assets,
+                ) = device_with_assets!("device1", "endpoint1", "asset1", "asset2");
         
                 file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
         
@@ -988,22 +929,10 @@ mod tests {
     async fn test_device_endpoint_remove_triggers_asset_deletion_tokens_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![
-            AssetRef {
-                name: "asset1".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-            AssetRef {
-                name: "asset2".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-        ];
+        let (
+            device1_endpoint1,
+            device1_endpoint1_assets,
+        ) = device_with_assets!("device1", "endpoint1", "asset1", "asset2");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
 
@@ -1075,22 +1004,10 @@ mod tests {
     async fn test_single_asset_removal_triggers_deletion_token_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![
-            AssetRef {
-                name: "asset1".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-            AssetRef {
-                name: "asset2".to_string(),
-                device_name: device1_endpoint1.device_name.clone(),
-                endpoint_name: device1_endpoint1.endpoint_name.clone(),
-            },
-        ];
+        let (
+            device1_endpoint1,
+            device1_endpoint1_assets,
+        ) = device_with_assets!("device1", "endpoint1", "asset1", "asset2");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
 
@@ -1171,15 +1088,10 @@ mod tests {
     async fn test_single_asset_addition_triggers_creation_notification_success() {
         let file_mount_manager = TempFileMountManager::new("test_mount");
 
-        let device1_endpoint1 = DeviceEndpointRef {
-            device_name: "device1".to_string(),
-            endpoint_name: "endpoint1".to_string(),
-        };
-        let device1_endpoint1_assets = vec![AssetRef {
-            name: "asset1".to_string(),
-            device_name: device1_endpoint1.device_name.clone(),
-            endpoint_name: device1_endpoint1.endpoint_name.clone(),
-        }];
+        let (
+            device1_endpoint1,
+            device1_endpoint1_assets,
+        ) = device_with_assets!("device1", "endpoint1", "asset1");
 
         file_mount_manager.add_device_endpoint(&device1_endpoint1, &device1_endpoint1_assets);
 
