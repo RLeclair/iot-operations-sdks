@@ -94,14 +94,27 @@ impl DeviceEndpointCreateObservation {
             None,
             move |res: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
                 match res {
-                    Ok(_) => {
-                        // TODO: Find which events the akri operator triggers and only process those
-                        match get_device_endpoint_names(&mount_path_clone) {
-                            Ok(device_endpoints) => {
-                                file_mount_map.update_device_endpoints(&device_endpoints);
-                            }
-                            Err(err) => {
-                                log::warn!("Failed to get device endpoint names: {err:?}");
+                    Ok(events) => {
+                        // When an asset is added or removed, kubernetes does a series of events:
+                        // Create Folder, Create File and Remove Folder
+                        // If any of those events are triggered we need to update the file mount map
+                        // with the new device endpoints and assets since none of those events
+                        // point to a specific file.
+                        if events.iter().any(|e| {
+                            matches!(
+                                e.kind,
+                                notify::EventKind::Remove(_)
+                                    | notify::EventKind::Create(_)
+                                    | notify::EventKind::Modify(_) // Keep this for now in case it is needed
+                            )
+                        }) {
+                            match get_device_endpoint_names(&mount_path_clone) {
+                                Ok(device_endpoints) => {
+                                    file_mount_map.update_device_endpoints(&device_endpoints);
+                                }
+                                Err(err) => {
+                                    log::warn!("Failed to get device endpoint names: {err:?}");
+                                }
                             }
                         }
                     }
