@@ -61,9 +61,6 @@ pub enum ErrorKind {
     /// A Device or an asset may only have one observation at a time.
     #[error("Device or asset may only be observed once at a time")]
     DuplicateObserve(#[from] dispatcher::RegisterError),
-    /// A Device or an asset had an error during observation or unobservation.
-    #[error("Observation/Unobservation not accepted by service")]
-    ObservationError,
     /// An error occurred while shutting down the Azure Device Registry Client.
     #[error("Shutdown error occurred with the following protocol errors: {0:?}")]
     ShutdownError(Vec<AIOProtocolError>),
@@ -154,9 +151,24 @@ pub struct Details {
 impl From<discovery_client_gen::AkriServiceError> for base_client_gen::AkriServiceError {
     fn from(value: discovery_client_gen::AkriServiceError) -> Self {
         base_client_gen::AkriServiceError {
-            code: value.code,
+            code: value.code.into(),
             message: value.message,
             timestamp: value.timestamp,
+        }
+    }
+}
+
+impl From<discovery_client_gen::CodeSchema> for base_client_gen::CodeSchema {
+    fn from(value: discovery_client_gen::CodeSchema) -> Self {
+        match value {
+            discovery_client_gen::CodeSchema::BadRequest => base_client_gen::CodeSchema::BadRequest,
+            discovery_client_gen::CodeSchema::InternalError => {
+                base_client_gen::CodeSchema::InternalError
+            }
+            discovery_client_gen::CodeSchema::KubeError => base_client_gen::CodeSchema::KubeError,
+            discovery_client_gen::CodeSchema::SerializationError => {
+                base_client_gen::CodeSchema::SerializationError
+            }
         }
     }
 }
