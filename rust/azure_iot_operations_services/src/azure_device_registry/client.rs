@@ -24,7 +24,8 @@ use crate::azure_device_registry::{
     device_discovery_gen::common_types::options as discovery_options_gen,
     device_discovery_gen::device_discovery_service::client as discovery_client_gen,
 };
-use crate::common::dispatcher::{DispatchError, Dispatcher};
+use crate::common::dispatcher::{DispatchError, DispatchErrorKind, Dispatcher};
+
 
 const DEVICE_NAME_TOPIC_TOKEN: &str = "deviceName";
 const DEVICE_NAME_RECEIVED_TOPIC_TOKEN: &str = "ex:deviceName";
@@ -58,7 +59,7 @@ where
         Arc<base_client_gen::SetNotificationPreferenceForDeviceUpdatesCommandInvoker<C>>,
     create_or_update_discovered_device_command_invoker:
         Arc<discovery_client_gen::CreateOrUpdateDiscoveredDeviceCommandInvoker<C>>,
-    device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>)>>,
+    device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), String>>,
     // asset
     get_asset_command_invoker: Arc<base_client_gen::GetAssetCommandInvoker<C>>,
     get_asset_status_command_invoker: Arc<base_client_gen::GetAssetStatusCommandInvoker<C>>,
@@ -67,7 +68,7 @@ where
         Arc<base_client_gen::SetNotificationPreferenceForAssetUpdatesCommandInvoker<C>>,
     create_or_update_discovered_asset_command_invoker:
         Arc<base_client_gen::CreateOrUpdateDiscoveredAssetCommandInvoker<C>>,
-    asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>)>>,
+    asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), String>>,
 }
 
 impl<C> Client<C>
@@ -389,9 +390,9 @@ where
         mut device_update_telemetry_receiver: base_client_gen::DeviceUpdateEventTelemetryReceiver<
             C,
         >,
-        device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>)>>,
+        device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), String>>,
         mut asset_update_telemetry_receiver: base_client_gen::AssetUpdateEventTelemetryReceiver<C>,
-        asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>)>>,
+        asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), String>>,
     ) {
         let max_attempt = 3;
         let mut device_shutdown_attempt_count = 0;
@@ -466,11 +467,11 @@ where
                                 Ok(()) => {
                                     log::debug!("Device Update Notification dispatched for device {device_name:?} and inbound endpoint {inbound_endpoint_name:?}");
                                 }
-                                Err(DispatchError::SendError(tokio::sync::mpsc::error::SendError((payload, _)))) => {
-                                    log::warn!("Device Update Observation has been dropped. Received Device Update Notification: {payload:#?}");
+                                Err(DispatchError { data, kind: DispatchErrorKind::SendError }) => {
+                                    log::warn!("Device Update Observation has been dropped. Received Device Update Notification: {data:#?}");
                                 }
-                                Err(DispatchError::NotFound((receiver_id, (payload, _)))) => {
-                                    log::warn!("Device Endpoint is not being observed. Received Device Update Notification: {payload:#?} for {receiver_id:?}");
+                                Err(DispatchError { data, kind: DispatchErrorKind::NotFound(receiver_id) }) => {
+                                    log::warn!("Device Endpoint is not being observed. Received Device Update Notification: {data:#?} for {receiver_id:?}");
                                 }
                             }
                         },
@@ -512,11 +513,11 @@ where
                                 Ok(()) => {
                                     log::debug!("Asset Update Notification dispatched for device {device_name:?}, inbound endpoint {inbound_endpoint_name:?}, and asset {:?}", asset_update_telemetry.payload.asset_update_event.asset_name);
                                 }
-                                Err(DispatchError::SendError(tokio::sync::mpsc::error::SendError((payload, _)))) => {
-                                    log::warn!("Asset Update Observation has been dropped. Received Asset Update Notification: {payload:?}",);
+                                Err(DispatchError { data, kind: DispatchErrorKind::SendError }) => {
+                                    log::warn!("Asset Update Observation has been dropped. Received Asset Update Notification: {data:?}");
                                 }
-                                Err(DispatchError::NotFound((receiver_id, (payload, _)))) => {
-                                    log::warn!("Asset is not being observed. Received Asset Update Notification: {payload:#?} for {receiver_id:?}",);
+                                Err(DispatchError { data, kind: DispatchErrorKind::NotFound(receiver_id) }) => {
+                                    log::warn!("Asset Endpoint is not being observed. Received Asset Update Notification: {data:?} for {receiver_id}");
                                 }
                             }
                         },
