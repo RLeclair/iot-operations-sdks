@@ -57,14 +57,14 @@ pub mod dispatcher {
     #[derive(Default)]
     pub struct Dispatcher<T, H>
     where
-        H: Eq + Hash + Debug,
+        H: Eq + Hash + Debug + Clone,
     {
         tx_map: Mutex<HashMap<H, UnboundedSender<T>>>,
     }
 
     impl<T, H> Dispatcher<T, H>
     where
-        H: Eq + Hash + Debug,
+        H: Eq + Hash + Debug + Clone,
     {
         /// Returns a new instance of Dispatcher
         pub fn new() -> Self {
@@ -114,7 +114,7 @@ pub mod dispatcher {
         }
 
         /// Returns all currently tracked receiver ids
-        pub fn get_all_receiver_ids(&self) -> Vec<String> {
+        pub fn get_all_receiver_ids(&self) -> Vec<H> {
             let tx_map = self.tx_map.lock().unwrap();
             tx_map.keys().cloned().collect()
         }
