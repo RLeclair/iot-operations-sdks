@@ -26,7 +26,6 @@ use crate::azure_device_registry::{
 };
 use crate::common::dispatcher::{DispatchError, DispatchErrorKind, Dispatcher};
 
-
 const DEVICE_NAME_TOPIC_TOKEN: &str = "deviceName";
 const DEVICE_NAME_RECEIVED_TOPIC_TOKEN: &str = "ex:deviceName";
 const INBOUND_ENDPOINT_NAME_TOPIC_TOKEN: &str = "inboundEndpointName";

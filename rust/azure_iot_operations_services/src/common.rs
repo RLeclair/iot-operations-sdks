@@ -118,6 +118,5 @@ pub mod dispatcher {
             let tx_map = self.tx_map.lock().unwrap();
             tx_map.keys().cloned().collect()
         }
-
     }
 }
