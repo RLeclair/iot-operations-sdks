@@ -1159,42 +1159,7 @@ where
                                         Some(command_name),
                                     ));
                                 }
-                            } else {
-                                log::error!(
-                                    "Command Invoker has been shutdown and will no longer receive a response"
-                                );
-                                return Err(AIOProtocolError::new_cancellation_error(
-                                    false,
-                                    None,
-                                    Some(
-                                        "Command Invoker has been shutdown and will no longer receive a response"
-                                            .to_string(),
-                                    ),
-                                    Some(command_name),
-                                ));
                             }
-                            // If the publish doesn't have properties, correlation_data, or the correlation data doesn't match, keep waiting for the next one
-                        }
-                        Err(RecvError::Lagged(e)) => {
-                            log::error!(
-                                "[ERROR] Invoker response receiver lagged. Response may not be received. Number of skipped messages: {e}"
-                            );
-                            // Keep waiting for response even though it may have gotten overwritten.
-                            continue;
-                        }
-                        Err(RecvError::Closed) => {
-                            log::error!(
-                                "[ERROR] MQTT Receiver has been cleaned up and will no longer send a response"
-                            );
-                            return Err(AIOProtocolError::new_cancellation_error(
-                                false,
-                                None,
-                                Some(
-                                    "MQTT Receiver has been cleaned up and will no longer send a response"
-                                        .to_string(),
-                                ),
-                                Some(command_name),
-                            ));
                         }
                     }
                 }
