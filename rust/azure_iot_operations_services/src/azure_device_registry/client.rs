@@ -734,7 +734,7 @@ where
                     .unregister_receiver(&receiver_id)
                 {
                     log::debug!(
-                        "Device `{device_name:?}` with inbound endpoint `{inbound_endpoint_name:?}` removed from observed list"
+                        "Removed device with receiver ID `{receiver_id:?}` from observed list"
                     );
                 } else {
                     log::debug!(
@@ -801,19 +801,19 @@ where
 
         // unobserve was successful, remove this device from our dispatcher
         let receiver_id = DeviceRef {
-            device_name: device_name.clone(),
-            endpoint_name: inbound_endpoint_name.clone(),
+            device_name,
+            endpoint_name: inbound_endpoint_name,
         };
         if self
             .device_update_notification_dispatcher
             .unregister_receiver(&receiver_id)
         {
             log::debug!(
-                "Device `{device_name:?}` with inbound endpoint `{inbound_endpoint_name:?}` removed from observed list"
+                "Removed device with receiver ID `{receiver_id:?}` from observed list"
             );
         } else {
             log::debug!(
-                "Device `{device_name:?}` with inbound endpoint `{inbound_endpoint_name:?}` not in observed list"
+                "Device with receiver ID `{receiver_id:?}` not in observed list"
             );
         }
         Ok(())
