@@ -808,13 +808,9 @@ where
             .device_update_notification_dispatcher
             .unregister_receiver(&receiver_id)
         {
-            log::debug!(
-                "Removed device with receiver ID `{receiver_id:?}` from observed list"
-            );
+            log::debug!("Removed device with receiver ID `{receiver_id:?}` from observed list");
         } else {
-            log::debug!(
-                "Device with receiver ID `{receiver_id:?}` not in observed list"
-            );
+            log::debug!("Device with receiver ID `{receiver_id:?}` not in observed list");
         }
         Ok(())
     }
