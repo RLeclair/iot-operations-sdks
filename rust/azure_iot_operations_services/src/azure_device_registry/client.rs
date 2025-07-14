@@ -13,10 +13,10 @@ use derive_builder::Builder;
 use tokio::sync::Notify;
 
 use crate::azure_device_registry::models::{
-    Asset, AssetStatus, Device, DeviceStatus, DiscoveredAsset, DiscoveredDevice, DeviceRef
+    Asset, AssetStatus, Device, DeviceRef, DeviceStatus, DiscoveredAsset, DiscoveredDevice,
 };
 use crate::azure_device_registry::{
-    AssetUpdateObservation, DeviceUpdateObservation, Error, ErrorKind, AssetRef
+    AssetRef, AssetUpdateObservation, DeviceUpdateObservation, Error, ErrorKind,
 };
 use crate::azure_device_registry::{
     adr_base_gen::adr_base_service::client as base_client_gen,
@@ -245,13 +245,8 @@ where
         self.device_update_notification_dispatcher
             .get_all_receiver_ids()
             .into_iter()
-            .map(|device_ref| {
-                (
-                    device_ref.device_name,
-                    device_ref.endpoint_name,
-                )
-        })
-        .collect()
+            .map(|device_ref| (device_ref.device_name, device_ref.endpoint_name))
+            .collect()
     }
 
     /// Convenience function to get all observed asset names to quickly unobserve all of them before cleaning up
@@ -262,12 +257,12 @@ where
             .into_iter()
             .map(|asset_ref| {
                 (
-                asset_ref.device_name,
-                asset_ref.inbound_endpoint_name,
-                asset_ref.name,
-            )
-        })
-        .collect()
+                    asset_ref.device_name,
+                    asset_ref.inbound_endpoint_name,
+                    asset_ref.name,
+                )
+            })
+            .collect()
     }
 
     /// Shutdown the [`Client`]. Shuts down the underlying command invokers.
@@ -384,7 +379,9 @@ where
         mut device_update_telemetry_receiver: base_client_gen::DeviceUpdateEventTelemetryReceiver<
             C,
         >,
-        device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), DeviceRef>>,
+        device_update_notification_dispatcher: Arc<
+            Dispatcher<(Device, Option<AckToken>), DeviceRef>,
+        >,
         mut asset_update_telemetry_receiver: base_client_gen::AssetUpdateEventTelemetryReceiver<C>,
         asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), AssetRef>>,
     ) {
@@ -712,9 +709,9 @@ where
         timeout: Duration,
     ) -> Result<DeviceUpdateObservation, Error> {
         let receiver_id = DeviceRef {
-                                device_name: device_name.clone(),
-                                endpoint_name: inbound_endpoint_name.clone(),
-                            };
+            device_name: device_name.clone(),
+            endpoint_name: inbound_endpoint_name.clone(),
+        };
         let rx = self
             .device_update_notification_dispatcher
             .register_receiver(receiver_id.clone())
@@ -816,9 +813,9 @@ where
 
         // unobserve was successful, remove this device from our dispatcher
         let receiver_id = DeviceRef {
-                                device_name: device_name.clone(),
-                                endpoint_name: inbound_endpoint_name.clone(),
-                            };
+            device_name: device_name.clone(),
+            endpoint_name: inbound_endpoint_name.clone(),
+        };
         if self
             .device_update_notification_dispatcher
             .unregister_receiver(&receiver_id)
@@ -1340,7 +1337,6 @@ where
         let version = response.payload.discovered_asset_response.version;
         Ok((discovery_id, version))
     }
-
 }
 
 #[cfg(test)]
