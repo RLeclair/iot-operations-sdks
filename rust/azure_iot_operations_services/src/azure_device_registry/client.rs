@@ -13,10 +13,10 @@ use derive_builder::Builder;
 use tokio::sync::Notify;
 
 use crate::azure_device_registry::models::{
-    Asset, AssetStatus, Device, DeviceStatus, DiscoveredAsset, DiscoveredDevice,
+    Asset, AssetStatus, Device, DeviceStatus, DiscoveredAsset, DiscoveredDevice, DeviceRef
 };
 use crate::azure_device_registry::{
-    AssetUpdateObservation, DeviceUpdateObservation, Error, ErrorKind,
+    AssetUpdateObservation, DeviceUpdateObservation, Error, ErrorKind, AssetRef
 };
 use crate::azure_device_registry::{
     adr_base_gen::adr_base_service::client as base_client_gen,
@@ -58,7 +58,7 @@ where
         Arc<base_client_gen::SetNotificationPreferenceForDeviceUpdatesCommandInvoker<C>>,
     create_or_update_discovered_device_command_invoker:
         Arc<discovery_client_gen::CreateOrUpdateDiscoveredDeviceCommandInvoker<C>>,
-    device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), String>>,
+    device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), DeviceRef>>,
     // asset
     get_asset_command_invoker: Arc<base_client_gen::GetAssetCommandInvoker<C>>,
     get_asset_status_command_invoker: Arc<base_client_gen::GetAssetStatusCommandInvoker<C>>,
@@ -67,7 +67,7 @@ where
         Arc<base_client_gen::SetNotificationPreferenceForAssetUpdatesCommandInvoker<C>>,
     create_or_update_discovered_asset_command_invoker:
         Arc<base_client_gen::CreateOrUpdateDiscoveredAssetCommandInvoker<C>>,
-    asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), String>>,
+    asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), AssetRef>>,
 }
 
 impl<C> Client<C>
@@ -242,37 +242,32 @@ where
     /// Convenience function to get all observed device & inbound endpoint names to quickly unobserve all of them before cleaning up
     #[must_use]
     pub fn get_all_observed_device_endpoints(&self) -> Vec<(String, String)> {
-        let mut device_endpoints = Vec::new();
-        for device_receiver_id in self
-            .device_update_notification_dispatcher
+        self.device_update_notification_dispatcher
             .get_all_receiver_ids()
-        {
-            // best effort, if the id can't be parsed, then skip it
-            if let Some((device_name, inbound_endpoint_name)) =
-                Self::unhash_device_endpoint(&device_receiver_id)
-            {
-                device_endpoints.push((device_name, inbound_endpoint_name));
-            }
-        }
-        device_endpoints
+            .into_iter()
+            .map(|device_ref| {
+                (
+                    device_ref.device_name,
+                    device_ref.endpoint_name,
+                )
+        })
+        .collect()
     }
 
     /// Convenience function to get all observed asset names to quickly unobserve all of them before cleaning up
     #[must_use]
     pub fn get_all_observed_assets(&self) -> Vec<(String, String, String)> {
-        let mut assets = Vec::new();
-        for receiver_id in self
-            .asset_update_notification_dispatcher
+        self.asset_update_notification_dispatcher
             .get_all_receiver_ids()
-        {
-            // best effort, if the id can't be parsed, then skip it
-            if let Some((device_name, inbound_endpoint_name, asset_name)) =
-                Self::unhash_device_endpoint_asset(&receiver_id)
-            {
-                assets.push((device_name, inbound_endpoint_name, asset_name));
-            }
-        }
-        assets
+            .into_iter()
+            .map(|asset_ref| {
+                (
+                asset_ref.device_name,
+                asset_ref.inbound_endpoint_name,
+                asset_ref.name,
+            )
+        })
+        .collect()
     }
 
     /// Shutdown the [`Client`]. Shuts down the underlying command invokers.
@@ -389,9 +384,9 @@ where
         mut device_update_telemetry_receiver: base_client_gen::DeviceUpdateEventTelemetryReceiver<
             C,
         >,
-        device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), String>>,
+        device_update_notification_dispatcher: Arc<Dispatcher<(Device, Option<AckToken>), DeviceRef>>,
         mut asset_update_telemetry_receiver: base_client_gen::AssetUpdateEventTelemetryReceiver<C>,
-        asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), String>>,
+        asset_update_notification_dispatcher: Arc<Dispatcher<(Asset, Option<AckToken>), AssetRef>>,
     ) {
         let max_attempt = 3;
         let mut device_shutdown_attempt_count = 0;
@@ -458,10 +453,10 @@ where
                             };
 
                             // Try to send the notification to the associated receiver
-                            let receiver_id = Self::hash_device_endpoint(
-                                device_name,
-                                inbound_endpoint_name,
-                            );
+                            let receiver_id = DeviceRef {
+                                device_name: device_name.clone(),
+                                endpoint_name: inbound_endpoint_name.clone(),
+                            };
                             match device_update_notification_dispatcher.dispatch(&receiver_id, (device_update_telemetry.payload.device_update_event.device.into(), ack_token)) {
                                 Ok(()) => {
                                     log::debug!("Device Update Notification dispatched for device {device_name:?} and inbound endpoint {inbound_endpoint_name:?}");
@@ -507,7 +502,11 @@ where
                             };
 
                             // Try to send the notification to the associated receiver
-                            let receiver_id = Self::hash_device_endpoint_asset(device_name, inbound_endpoint_name, &asset_update_telemetry.payload.asset_update_event.asset_name);
+                            let receiver_id = AssetRef {
+                                device_name: device_name.clone(),
+                                inbound_endpoint_name: inbound_endpoint_name.clone(),
+                                name: asset_update_telemetry.payload.asset_update_event.asset_name.clone(),
+                            };
                             match asset_update_notification_dispatcher.dispatch(&receiver_id, (asset_update_telemetry.payload.asset_update_event.asset.into(), ack_token)) {
                                 Ok(()) => {
                                     log::debug!("Asset Update Notification dispatched for device {device_name:?}, inbound endpoint {inbound_endpoint_name:?}, and asset {:?}", asset_update_telemetry.payload.asset_update_event.asset_name);
@@ -712,7 +711,10 @@ where
         inbound_endpoint_name: String,
         timeout: Duration,
     ) -> Result<DeviceUpdateObservation, Error> {
-        let receiver_id = Self::hash_device_endpoint(&device_name, &inbound_endpoint_name);
+        let receiver_id = DeviceRef {
+                                device_name: device_name.clone(),
+                                endpoint_name: inbound_endpoint_name.clone(),
+                            };
         let rx = self
             .device_update_notification_dispatcher
             .register_receiver(receiver_id.clone())
@@ -813,7 +815,10 @@ where
             .map_err(ErrorKind::from)?;
 
         // unobserve was successful, remove this device from our dispatcher
-        let receiver_id = Self::hash_device_endpoint(&device_name, &inbound_endpoint_name);
+        let receiver_id = DeviceRef {
+                                device_name: device_name.clone(),
+                                endpoint_name: inbound_endpoint_name.clone(),
+                            };
         if self
             .device_update_notification_dispatcher
             .unregister_receiver(&receiver_id)
@@ -894,21 +899,6 @@ where
         let discovery_id = response.payload.discovered_device_response.discovery_id;
         let version = response.payload.discovered_device_response.version;
         Ok((discovery_id, version))
-    }
-
-    /// Hashes the device name and inbound endpoint name to create a single string.
-    fn hash_device_endpoint(device_name: &str, inbound_endpoint_name: &str) -> String {
-        // `~`` can't be in a topic token, so this will never collide with another device + inbound endpoint name combo
-        format!("{device_name}~{inbound_endpoint_name}")
-    }
-
-    /// Unhashes the device name and inbound endpoint name from a single string.
-    fn unhash_device_endpoint(hashed_device_endpoint: &str) -> Option<(String, String)> {
-        hashed_device_endpoint
-            .split_once('~')
-            .map(|(device_name, inbound_endpoint_name)| {
-                (device_name.to_string(), inbound_endpoint_name.to_string())
-            })
     }
 
     // ~~~~~~~~~~~~~~~~~ Asset APIs ~~~~~~~~~~~~~~~~~~~~~
@@ -1135,8 +1125,12 @@ where
         }
 
         // TODO Right now using device name + asset_name as the key for the dispatcher, consider using tuple
-        let receiver_id =
-            Self::hash_device_endpoint_asset(&device_name, &inbound_endpoint_name, &asset_name);
+        // let receiver_id =
+        let receiver_id = AssetRef {
+            device_name: device_name.clone(),
+            inbound_endpoint_name: inbound_endpoint_name.clone(),
+            name: asset_name.clone(),
+        };
 
         let rx = self
             .asset_update_notification_dispatcher
@@ -1257,8 +1251,11 @@ where
             .map_err(ErrorKind::from)?; // TODO: deregister on failure as well so that a new observation can be created later?
 
         // unobserve was successful, remove this asset from our dispatcher
-        let receiver_id =
-            Self::hash_device_endpoint_asset(&device_name, &inbound_endpoint_name, &asset_name);
+        let receiver_id = AssetRef {
+            device_name: device_name.clone(),
+            inbound_endpoint_name: inbound_endpoint_name.clone(),
+            name: asset_name.clone(),
+        };
         if self
             .asset_update_notification_dispatcher
             .unregister_receiver(&receiver_id)
@@ -1344,37 +1341,12 @@ where
         Ok((discovery_id, version))
     }
 
-    /// Hashes the device name and inbound endpoint name into a single string.
-    fn hash_device_endpoint_asset(
-        device_name: &str,
-        inbound_endpoint_name: &str,
-        asset_name: &str,
-    ) -> String {
-        // `~`` can't be in a topic token, so this will never collide with another device + inbound endpoint + asset name combo
-        format!("{device_name}~{inbound_endpoint_name}~{asset_name}")
-    }
-
-    /// Unhashes the device name, inbound endpoint name, and asset name from a single string.
-    fn unhash_device_endpoint_asset(
-        hashed_device_endpoint_asset: &str,
-    ) -> Option<(String, String, String)> {
-        let pieces: Vec<&str> = hashed_device_endpoint_asset.split('~').collect();
-        if pieces.len() >= 3 {
-            Some((
-                pieces[0].to_string(),
-                pieces[1].to_string(),
-                pieces[2].to_string(),
-            ))
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::azure_device_registry::models::DeviceRef;
+    // use crate::azure_device_registry::models::DeviceRef;
     use azure_iot_operations_mqtt::MqttConnectionSettingsBuilder;
     use azure_iot_operations_mqtt::session::SessionManagedClient;
     use azure_iot_operations_mqtt::session::{Session, SessionOptionsBuilder};
@@ -2109,59 +2081,5 @@ mod tests {
             topic_tokens.get(INBOUND_ENDPOINT_TYPE_TOPIC_TOKEN),
             Some(&inbound_endpoint_type)
         );
-    }
-
-    #[test]
-    fn test_hash_and_unhash_device_endpoint() {
-        let device_name = "device1";
-        let endpoint_name = "endpoint1";
-
-        let hashed =
-            Client::<SessionManagedClient>::hash_device_endpoint(device_name, endpoint_name);
-        assert_eq!(hashed, "device1~endpoint1");
-
-        let unhashed = Client::<SessionManagedClient>::unhash_device_endpoint(&hashed);
-        assert!(unhashed.is_some());
-
-        let (unhashed_device, unhashed_endpoint) = unhashed.unwrap();
-        assert_eq!(unhashed_device, device_name);
-        assert_eq!(unhashed_endpoint, endpoint_name);
-    }
-
-    #[test]
-    fn test_hash_and_unhash_device_endpoint_asset() {
-        let device_name = "device1";
-        let endpoint_name = "endpoint1";
-        let aseet_name = "asset1";
-
-        let hashed = Client::<SessionManagedClient>::hash_device_endpoint_asset(
-            device_name,
-            endpoint_name,
-            aseet_name,
-        );
-        assert_eq!(hashed, "device1~endpoint1~asset1");
-
-        let unhashed = Client::<SessionManagedClient>::unhash_device_endpoint_asset(&hashed);
-        assert!(unhashed.is_some());
-
-        let (unhashed_device, unhashed_endpoint, unhashed_asset) = unhashed.unwrap();
-        assert_eq!(unhashed_device, device_name);
-        assert_eq!(unhashed_endpoint, endpoint_name);
-        assert_eq!(unhashed_asset, aseet_name);
-    }
-
-    #[test]
-    fn test_hash_and_unhash_invalid_device_endpoint_asset() {
-        let invalid_hash = "device1";
-        let unhashed_invalid =
-            Client::<SessionManagedClient>::unhash_device_endpoint_asset(invalid_hash);
-        assert!(unhashed_invalid.is_none());
-    }
-    #[test]
-    fn test_hash_and_unhash_invalid_device_endpoint() {
-        // Test unhashing with invalid input
-        let invalid_hash = "device1";
-        let unhashed_invalid = Client::<SessionManagedClient>::unhash_device_endpoint(invalid_hash);
-        assert!(unhashed_invalid.is_none());
     }
 }
