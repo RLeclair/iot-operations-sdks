@@ -241,28 +241,16 @@ where
 
     /// Convenience function to get all observed device & inbound endpoint names to quickly unobserve all of them before cleaning up
     #[must_use]
-    pub fn get_all_observed_device_endpoints(&self) -> Vec<(String, String)> {
+    pub fn get_all_observed_device_endpoints(&self) -> Vec<DeviceRef> {
         self.device_update_notification_dispatcher
             .get_all_receiver_ids()
-            .into_iter()
-            .map(|device_ref| (device_ref.device_name, device_ref.endpoint_name))
-            .collect()
     }
 
     /// Convenience function to get all observed asset names to quickly unobserve all of them before cleaning up
     #[must_use]
-    pub fn get_all_observed_assets(&self) -> Vec<(String, String, String)> {
+    pub fn get_all_observed_assets(&self) -> Vec<AssetRef> {
         self.asset_update_notification_dispatcher
             .get_all_receiver_ids()
-            .into_iter()
-            .map(|asset_ref| {
-                (
-                    asset_ref.device_name,
-                    asset_ref.inbound_endpoint_name,
-                    asset_ref.name,
-                )
-            })
-            .collect()
     }
 
     /// Shutdown the [`Client`]. Shuts down the underlying command invokers.
@@ -451,12 +439,12 @@ where
 
                             // Try to send the notification to the associated receiver
                             let receiver_id = DeviceRef {
-                                device_name: device_name.clone(),
-                                endpoint_name: inbound_endpoint_name.clone(),
+                                device_name: device_name.to_string(),
+                                endpoint_name: inbound_endpoint_name.to_string(),
                             };
                             match device_update_notification_dispatcher.dispatch(&receiver_id, (device_update_telemetry.payload.device_update_event.device.into(), ack_token)) {
                                 Ok(()) => {
-                                    log::debug!("Device Update Notification dispatched for device {device_name:?} and inbound endpoint {inbound_endpoint_name:?}");
+                                    log::debug!("Device Update Notification dispatched for {receiver_id:?}");
                                 }
                                 Err(DispatchError { data: (payload, _), kind: DispatchErrorKind::SendError }) => {
                                     log::warn!("Device Update Observation has been dropped. Received Device Update Notification: {payload:?}");
@@ -500,13 +488,13 @@ where
 
                             // Try to send the notification to the associated receiver
                             let receiver_id = AssetRef {
-                                device_name: device_name.clone(),
-                                inbound_endpoint_name: inbound_endpoint_name.clone(),
-                                name: asset_update_telemetry.payload.asset_update_event.asset_name.clone(),
+                                device_name: device_name.to_string(),
+                                inbound_endpoint_name: inbound_endpoint_name.to_string(),
+                                name: asset_update_telemetry.payload.asset_update_event.asset_name.to_string(),
                             };
                             match asset_update_notification_dispatcher.dispatch(&receiver_id, (asset_update_telemetry.payload.asset_update_event.asset.into(), ack_token)) {
                                 Ok(()) => {
-                                    log::debug!("Asset Update Notification dispatched for device {device_name:?}, inbound endpoint {inbound_endpoint_name:?}, and asset {:?}", asset_update_telemetry.payload.asset_update_event.asset_name);
+                                    log::debug!("Asset Update Notification dispatched for {receiver_id:?}");
                                 }
                                 Err(DispatchError { data: (payload, _), kind: DispatchErrorKind::SendError }) => {
                                     log::warn!("Asset Update Observation has been dropped. Received Asset Update Notification: {payload:?}");
@@ -1121,8 +1109,6 @@ where
             )));
         }
 
-        // TODO Right now using device name + asset_name as the key for the dispatcher, consider using tuple
-        // let receiver_id =
         let receiver_id = AssetRef {
             device_name: device_name.clone(),
             inbound_endpoint_name: inbound_endpoint_name.clone(),
@@ -1342,7 +1328,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use crate::azure_device_registry::models::DeviceRef;
     use azure_iot_operations_mqtt::MqttConnectionSettingsBuilder;
     use azure_iot_operations_mqtt::session::SessionManagedClient;
     use azure_iot_operations_mqtt::session::{Session, SessionOptionsBuilder};
