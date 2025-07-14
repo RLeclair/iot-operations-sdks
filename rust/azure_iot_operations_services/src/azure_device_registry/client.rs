@@ -1231,9 +1231,9 @@ where
 
         // unobserve was successful, remove this asset from our dispatcher
         let receiver_id = AssetRef {
-            device_name: device_name.clone(),
-            inbound_endpoint_name: inbound_endpoint_name.clone(),
-            name: asset_name.clone(),
+            device_name: device_name,
+            inbound_endpoint_name: inbound_endpoint_name,
+            name: asset_name,
         };
         if self
             .asset_update_notification_dispatcher
