@@ -715,8 +715,8 @@ where
                 .payload(observe_payload)
                 .map_err(ErrorKind::from)?
                 .topic_tokens(Self::get_base_service_topic_tokens(
-                    device_name.clone(),
-                    inbound_endpoint_name.clone(),
+                    device_name,
+                    inbound_endpoint_name,
                 ))
                 .timeout(timeout)
                 .build()
@@ -737,9 +737,7 @@ where
                         "Removed device with receiver ID `{receiver_id:?}` from observed list"
                     );
                 } else {
-                    log::debug!(
-                        "Device `{device_name:?}` with inbound endpoint `{inbound_endpoint_name:?}` not in observed list"
-                    );
+                    log::debug!("Device with receiver ID `{receiver_id:?}` not in observed list");
                 }
 
                 match error_branches {
